@@ -1,58 +1,24 @@
-# Pocket Pro Tracker v0.3.5 · Ghost Playhead + SONG od POSITION
+# Pocket Pro Tracker v0.3.7 — zaznaczanie LSDJ i wspólny schowek
 
-SourceKit bazuje na poprzednim, potwierdzonym na urządzeniu PPT v0.3.2, z oryginalnym silnikiem ProTracker 2 Clone **v1.92**. ZIP zawiera źródła do GitHub Desktop, nie gotowy program ARM64.
+Źródła do repozytorium GitHub Desktop (nie gotowy port). Pełne testy ARM64 oraz fizyczna konsola wymagają weryfikacji.
 
-## Zmiana v0.3.5: precyzyjniejsza mysz (−30% każdej prędkości)
+## Skróty
 
-- Lewy analog przesuwa mysz z szybkością **70% poprzedniej wersji** w całym zakresie wychylenia, również przy maksymalnym wychyleniu.
-- Nie zmieniamy martwej strefy ani krzywej przyspieszania. Wolne, średnie i szybkie ruchy są proporcjonalnie spowolnione.
-- Alternatywna mysz **R1 + D-pad**, a także D-pad myszy w oknach dialogowych, są spowolnione o dokładnie tyle samo.
-- Ułamki pikseli są akumulowane, aby zachować płynny ruch przy małym wychyleniu.
-- Pełny ekran, LIVE EDIT, ghost playhead, transport, sample i karuzela SONGNAME są zachowane.
+- **SELECT + B**: rozpocznij zaznaczanie od bieżącego pola; szary prostokąt pokazuje aktualny obszar.
+- **D-pad**: rozszerz zaznaczenie w górę/dół po wierszach i w lewo/prawo po polach wszystkich czterech kanałów.
+- **B**: zatwierdź i kopiuj zaznaczony obszar (również jedno pole).
+- **SELECT + B + L1**: natychmiast skopiuj cały bieżący kanał (64 wiersze). Kolejność naciskania L1/B przy trzymanym SELECT może być dowolna.
+- **SELECT + B + R1**: natychmiast skopiuj cały pattern (4 kanały × 64 wiersze). Kolejność naciskania R1/B przy trzymanym SELECT może być dowolna.
+- **SELECT + A**: wklej ostatnią kopię. Blok od wybranego ROW i pola; kanał do wybranego kanału, a pattern do wybranego patternu (od ROW 00).
 
-## Poprzednie funkcje zachowane z v0.3.4
+W trybie LIVE EDIT można kopiować i wklejać bez przerywania odtwarzania. Operacje zapisu są otoczone blokadą audio. Osobny szary ghost playhead nie porusza kursorem ani zaznaczeniem.
 
-**MENU + START**: uruchamia odtwarzanie całego SONG od *aktualnie ustawionej pozycji POS*, zaczynając od ROW 00. Odtwarzany pattern jest pobierany z `song->header.patternTable[song->currPos]` (przez oryginalną funkcję `modPlay(DONT_SET_PATTERN, song->currPos, 0)`). Song dalej przechodzi po następnych pozycjach tabeli.
-
-**SELECT podczas PLAY**: LIVE EDIT nadal nie przesuwa edytora za odtwarzaczem. Dodatkowo w widoku patternu będzie widoczny niezależny **szary ghost playhead**, czyli delikatniejsza, szara belka w wierszu faktycznie odtwarzanym. Wybrany ROW kursora pozostaje bez zmian.
-
-Ghost jest rysowany jako szare tło *pod* tekstem patternu, w dwóch trybach wyświetlania ProTrackera (normal/dotted), bez nakładania przeźroczystej warstwy na fonty. Klatka odświeża się na każdy odtwarzany wiersz. Poprzednia szara belka zostaje wyczyszczona bez naruszania pionowych separatorów kanałów. Kiedy playhead znajdzie się poza widocznym oknem 15 wierszy, belka nie jest widoczna (edytor nie przewija się sam). Gdy edytujesz inny pattern niż grający, belka się nie pojawia. Kiedy oba kursory znajdą się w tym samym wierszu, pierwszeństwo ma wyróżnienie głównego kursora PT2.
-
-Źródłem pozycji ghosta jest migawka `modPattern` + `song->row` z oryginalnej pętli audio PT2, publikowana atomowo (bez naruszania `song->currRow`, `song->currPattern`, zegara ani mixera). Pozostałe zachowania i oryginalny FULL SCREEN bez zmian.
-
-## Sterowanie transportem
-
-| Skrót | Funkcja |
-|---|---|
-| START | PLAY PATTERN od ROW 00, w czasie PLAY = STOP |
-| SELECT + START | PLAY PATTERN od zaznaczonego ROW |
-| MENU + START | PLAY SONG od bieżącego POSITION, ROW 00 |
-| SELECT podczas odtwarzania | LIVE EDIT wł./wył., niezależny kursor i ghost |
-| L1 / R1 | Wybór PATTERN −1/+1, podczas LIVE EDIT bez ruszania grającego patternu |
-| L2 / R2 | Wybór aktywnego sampla |
-| A | Wstaw nutę i bieżący sample, z podglądem |
-| L1 + MENU | ESC i oryginalne potwierdzenie wyjścia |
+**Uwaga:** prostokąt dotyczy pól NOTE, cyfr numeru sampla, komendy i cyfr parametru. Wklejanie do innych typów pól nie zmienia niezgodnych danych (np. nuta nie stanie się komendą efektu). Przy wklejaniu przy końcu patternu nadmiar wierszy/pól jest obcinany, nigdy nie zawijany. B poza zaznaczaniem nie kopiuje już pojedynczego pola. W SONGNAME B nadal działa jako Backspace.
 
 ## Instalacja
 
-1. Rozpakuj SourceKit do repozytorium w GitHub Desktop, zastępując stare pliki (również w ukrytym folderze `.github`).
-2. Summary: `PPT v0.3.5 - All mouse speeds 30 percent slower`
-3. Commit to main → Push origin.
-4. Po zielonej kompilacji pobierz artefakt ZIP, rozpakuj, a wewnętrzny `pocket_pro_tracker_pt2.zip` zainstaluj przez PortMaster.
+Rozpakuj do repozytorium Pocket-Pro-Tracker, podmień pliki, Commit to main → Push origin; GitHub Actions skompiluje paczkę do PortMaster. Summary: `PPT v0.3.7 - LSDJ block selection and unified clipboard`.
 
-## Testy
+Bazą jest v0.3.6. Zachowano analog zwolniony o 30%, karuzelę SONGNAME, START / SELECT+START / MENU+START, LIVE EDIT, szary ghost playhead i FULLSCREENSTRETCH.
 
-`bash tests/check.sh` uruchamia lokalne testy sterowania, idempotencji patchera i kodu ghosta. GitHub Actions dopiero zbuduje prawdziwe PT2 na ARM64. Przed użyciem na występie sprawdź na kopii MOD, czy ghost porusza się prawidłowo i nic nie zatrzymuje odtwarzania.
-
-
-## v0.3.5: wpisywanie nazwy utworu bez klawiatury
-
-- Lewym analogiem ustaw kursor myszy na `SONGNAME` (pole tytułu utworu).
-- Naciśnij **X** (lewy klik), aby wejść w oryginalny tryb wpisywania nazwy PT2.
-- Gdy kursor tekstowy jest aktywny: **D-pad UP/DOWN** przewija `spacja → a..z → 0..9 → - → _` (z zawijaniem).
-- **D-pad LEFT/RIGHT** przenosi pozycję wpisywania.
-- **X** potwierdza wyświetlony znak i przechodzi do następnej pozycji.
-- **Y** kończy tryb nazwy i zachowuje aktualnie wpisany tytuł w MOD. Samo Y nie zapisuje pliku na kartę: użyj później zwykłego `SAVE MODULE`.
-- Limit standardu MOD: **20 znaków**. Pozycja kursora i zapis są realizowane natywnym edytorem tekstowym PT2.
-- W pozostałych ekranach X/Y wciąż klikają myszą. Pozostałe tryby edycji pól PT2 nie używają tej karuzeli.
-- Testy są lokalne na atrapach PT2; konieczna kompilacja GitHub Actions oraz test na urządzeniu.
+**Implementacja:** schowek PPT jest niezależny od klawiaturowego schowka oryginalnego PT2, ale kopiowanie/wklejanie ma równoważną funkcjonalność. W zaznaczeniu pojedynczego pola można kopiować oddzielnie cyfrę numeru sampla i cyfrę parametru.

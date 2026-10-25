@@ -24,28 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
  (p/'src/pt2_main.c').write_text('#include "pt2_keyboard.h"\nvoid f(){\n\tloadConfig();\n\tSDL_EventState(SDL_DROPFILE, SDL_ENABLE);\n\twhile (1) {\n\t\thandleInput();\n\t}\n\tcleanUp();\n\tSDL_Quit();\n\n\treturn 0;\n}\n')
  (p/'src/pt2_askbox.c').write_text('#include "pt2_askbox.h"\nvoid f(){\n\t\treadMouseXY();\n}\n')
  (p/'src/pt2_replayer.c').write_text('#include "pt2_visuals_sync.h"\nstatic void updateUIPositions(void)\n{\n\tif (editor.mod2WavOngoing || editor.pat2SmpOngoing)\n\t\treturn;\n\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;\n}\n')
- (p/'src/pt2_pattern_viewer.c').write_text('''#include "pt2_visuals.h"
-void normal(void){
- if (row < 0 || row >= MOD_ROWS) { }
- else // non-middle rows
- {
- printTwoDecimalsBg(8, y, row, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- textOutBg(x, y, name, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- charOutBg(x, y, value, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- printOneHexBg(x, y, value, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- }
-}
-void dotted(void){
- if (row < 0 || row >= MOD_ROWS) { }
- else // non-middle rows
- {
- printTwoDecimalsBg(8, y, row, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- textOutBg(x, y, name, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- charOutBg(x, y, value, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- printTwoHexBg(x, y, value, video.palette[PAL_PATTXT], video.palette[PAL_BACKGRD]);
- }
-}
-''')
+ (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
@@ -56,6 +35,7 @@ void dotted(void){
  assert 'ppt_set_playhead(modPattern, song->row);' in (p/'src/pt2_replayer.c').read_text()
  assert (p/'src/pt2_pattern_viewer.c').read_text().count('const bool pptIsGhost')==2
  assert (p/'src/pt2_pattern_viewer.c').read_text().count('fillRect(8, y, 16, 7, pptGhostBg)')==2
+ assert (p/'src/pt2_pattern_viewer.c').read_text().count('pptSelectionBg(row, j,')>=24
  assert not (p/'src/pt2_visuals.c').exists()
 print('Source integration and idempotency OK')
 PY
@@ -64,5 +44,5 @@ from pathlib import Path
 s=Path('.github/workflows/build-ppt-arm64.yml').read_text()
 assert 'FULLSCREENSTRETCH=TRUE' in s and 'INTEGERSCALING=FALSE' not in s
 assert 'ppt_scale' not in Path('patch/apply_patch.py').read_text()
-print('Legacy fullscreen configuration OK (v0.3.4)')
+print('Legacy fullscreen configuration OK (v0.3.7)')
 PY

@@ -13,3 +13,6 @@ void ppt_set_playhead(int pattern, int row);
 /* Returns playhead ROW 0..63 only if the edited pattern is playing and
    LIVE EDIT is active; -1 otherwise. Safe to call on the GUI thread. */
 int ppt_ghost_row(int displayPattern);
+
+/* True only while SELECT+B rectangular selection is displayed. */
+bool ppt_selection_contains(int pattern, int row, int channel, int field);

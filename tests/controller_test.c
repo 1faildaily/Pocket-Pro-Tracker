@@ -224,6 +224,139 @@ int main(void){
   buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
   assert(!ui.editTextFlag && textCommitted==1);
   assert(strcmp(state.header.name,"aa")==0 && state.modified);
+  /* v0.3.7: B deletes the preceding character in SONGNAME and keeps
+     the rest of the title. It must not exit edit mode or activate
+     the ordinary B clipboard action while editing a title. */
+  ui.editTextFlag=true; textEdit.object=PTB_SONGNAME;
+  textEdit.textStartPtr=state.header.name;
+  textEdit.textEndPtr=state.header.name+19;
+  strcpy(state.header.name,"abcdef");
+  textEdit.textPtr=state.header.name+3; /* abc|def -> ab|def */
+  clip.kind=PPT_CLIP_NONE;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"abdef")==0);
+  assert(textEdit.textPtr==state.header.name+2 && ui.editTextFlag);
+  assert(clip.kind==PPT_CLIP_NONE && ui.updateSongName);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"adef")==0);
+  assert(textEdit.textPtr==state.header.name+1);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"def")==0);
+  assert(textEdit.textPtr==state.header.name);
+  /* Backspace at the start is a harmless no-op. */
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"def")==0 && textEdit.textPtr==state.header.name);
+  /* The last character is removed when caret is at the end. */
+  textEdit.textPtr=state.header.name+3;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"de")==0 && textEdit.textPtr==state.header.name+2);
+  /* Native editor may point beyond text end; delete last real character. */
+  textEdit.textPtr=state.header.name+6;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strcmp(state.header.name,"d")==0 && textEdit.textPtr==state.header.name+1);
+  /* Protect the MOD title's 20-char boundary and its NUL terminator. */
+  memset(state.header.name,'x',20);state.header.name[20]='\0';
+  textEdit.textPtr=state.header.name+19;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(strlen(state.header.name)==19 && state.header.name[19]=='\0');
+  assert(textEdit.textPtr==state.header.name+18);
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.editTextFlag && textCommitted==2 && state.modified);
+  /* NEW rectangular selection: SELECT+B starts, D-pad expands,
+     next B snapshots the block, SELECT+A pastes it elsewhere. */
+  ui.editTextFlag=false; state.currPattern=0; state.currRow=8;
+  editor.songPlaying=false; cursor.pos=0; cursor.channel=0;
+  clip.kind=PPT_CLIP_NONE;
+  patt[8*4].period=periods[3];patt[9*4].period=periods[6];
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(selecting && ppt_selection_contains(0,8,0,0));
+  assert(!ppt_selection_contains(0,8,0,1));
+  directionAction(1);
+  assert(state.currRow==9 && ppt_selection_contains(0,9,0,0));
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(!selecting && clip.kind==PPT_CLIP_BLOCK && clip.rowLo==8 && clip.rowHi==9);
+  assert(clip.colLo==0 && clip.colHi==0);
+  state.currRow=12; patt[12*4].period=0;patt[13*4].period=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  assert(patt[12*4].period==periods[3] && patt[13*4].period==periods[6]);
+  /* Extend selection in both axes across channels and paste to a new channel. */
+  state.currRow=8; cursor.pos=5;cursor.channel=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  directionAction(3);directionAction(3);directionAction(1);
+  assert(cursor.pos==7 && ppt_selection_contains(0,9,1,1));
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(clip.kind==PPT_CLIP_BLOCK && clip.colLo==5 && clip.colHi==7);
+  /* Channel copy: copying one channel must preserve the other three. */
+  state.currRow=10;cursor.pos=6;cursor.channel=1;
+  patt[1].period=periods[5];patt[2].period=periods[2];
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  buttonEvent(PPT_BTN_L1,true);
+  assert(clip.kind==PPT_CLIP_CHANNEL && clip.sourceChannel==1 && !selecting);
+  releaseButton(PPT_BTN_L1);releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(state.currPattern==0);
+  cursor.pos=12;cursor.channel=2;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  assert(patt[2].period==periods[5] && patt[1].period==periods[5]);
+  /* Pattern copy: snapshot all rows/channels, then overwrite entire target. */
+  patt[0].period=periods[9];
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  buttonEvent(PPT_BTN_R1,true);
+  releaseButton(PPT_BTN_R1);releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(clip.kind==PPT_CLIP_PATTERN && !selecting);
+  patt[0].period=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  assert(patt[0].period==periods[9]);
+  /* Single-field sample nibble selection must not overwrite its neighbor. */
+  state.currRow=20;cursor.pos=1;cursor.channel=0;
+  patt[20*4].sample=0xAB;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(selecting && ppt_selection_contains(0,20,0,1) &&
+         !ppt_selection_contains(0,20,0,2));
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  state.currRow=21;cursor.pos=1;
+  patt[21*4].sample=0x34;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  assert(patt[21*4].sample==0xA4);
+  /* Copy from channel 0 by pressing L1 BEFORE B, and do not switch pattern. */
+  state.currPattern=0;cursor.pos=0;cursor.channel=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_L1,true);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  releaseButton(PPT_BTN_L1);releaseButton(PPT_BTN_SELECT);
+  assert(clip.kind==PPT_CLIP_CHANNEL && state.currPattern==0);
+  /* SELECT+B+B may be confirmed while SELECT is still down. */
+  state.currRow=22;cursor.pos=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);
+  assert(selecting);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  releaseButton(PPT_BTN_SELECT);
+  assert(!selecting && clip.kind==PPT_CLIP_BLOCK && clip.rowLo==22);
+  /* Clipboard also works during LIVE EDIT without stopping or moving playhead. */
+  editor.songPlaying=true;atomic_store(&liveEditEnabled,true);
+  int lockBefore=lockCalls;
+  state.currRow=24;cursor.pos=0;cursor.channel=0;
+  patt[24*4].period=periods[2];
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  directionAction(1);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  state.currRow=28;patt[28*4].period=0;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  assert(editor.songPlaying && ppt_live_edit_active());
+  assert(patt[28*4].period==periods[2] && lockCalls>lockBefore && lockCalls==unlockCalls);
+  editor.songPlaying=false;atomic_store(&liveEditEnabled,false);
+  /* B alone is no longer a single-field copy action. */
+  clip.kind=PPT_CLIP_NONE;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(clip.kind==PPT_CLIP_NONE);
   /* Outside SONGNAME, X/Y remain mouse buttons. Even if edit activates
      between mouse-down and mouse-up, the original release must be sent. */
   state.modified=false;ui.editTextFlag=false;video.window=(SDL_Window*)1;
@@ -245,12 +378,12 @@ int main(void){
   buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
   assert(textEdit.textPtr==state.header.name+19 && textMovedRight==oldMoves);
   buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
-  assert(!ui.editTextFlag && textCommitted==2);
+  assert(!ui.editTextFlag && textCommitted==3);
   /* Sample names and numeric text editing are unaffected. */
   ui.editTextFlag=true;textEdit.object=PTB_SONGNAME+1;
   assert(!isSongNameEdit());
   ui.editTextFlag=false;
 
-  puts("PPT v0.3.5: transport, ghost, song name carousel, all mouse speeds -30% OK");
+  puts("PPT v0.3.6: song name Backspace, transport, ghost, mouse speeds -30% OK");
   return 0;
 }

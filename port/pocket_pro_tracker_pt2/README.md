@@ -1,8 +1,15 @@
-# Pocket Pro Tracker v0.3.5 · Ghost Playhead + SONG od POSITION
+# Pocket Pro Tracker v0.3.6 · Ghost Playhead + SONG od POSITION
 
 SourceKit bazuje na poprzednim, potwierdzonym na urządzeniu PPT v0.3.2, z oryginalnym silnikiem ProTracker 2 Clone **v1.92**. ZIP zawiera źródła do GitHub Desktop, nie gotowy program ARM64.
 
-## Zmiana v0.3.5: precyzyjniejsza mysz (−30% każdej prędkości)
+## Nowość v0.3.6: Backspace pod B w karuzeli SONGNAME
+
+- Gdy edytujesz nazwę SONGNAME, **B** usuwa znak przed kursorem, przesuwa resztę nazwy w lewo i cofa kursor.
+- Na pierwszej pozycji B niczego nie usuwa. **Y** kończy edycję, zachowując aktualną nazwę.
+- W pozostałych miejscach **B** nadal ma dotychczasową funkcję kopiowania pola.
+- Pozostałe funkcje v0.3.5, w tym zmniejszona prędkość myszy, są zachowane.
+
+## Zmiana v0.3.6: precyzyjniejsza mysz (−30% każdej prędkości)
 
 - Lewy analog przesuwa mysz z szybkością **70% poprzedniej wersji** w całym zakresie wychylenia, również przy maksymalnym wychyleniu.
 - Nie zmieniamy martwej strefy ani krzywej przyspieszania. Wolne, średnie i szybkie ruchy są proporcjonalnie spowolnione.
@@ -36,7 +43,7 @@ Ghost jest rysowany jako szare tło *pod* tekstem patternu, w dwóch trybach wy�
 ## Instalacja
 
 1. Rozpakuj SourceKit do repozytorium w GitHub Desktop, zastępując stare pliki (również w ukrytym folderze `.github`).
-2. Summary: `PPT v0.3.5 - All mouse speeds 30 percent slower`
+2. Summary: `PPT v0.3.6 - SONGNAME Backspace on B`
 3. Commit to main → Push origin.
 4. Po zielonej kompilacji pobierz artefakt ZIP, rozpakuj, a wewnętrzny `pocket_pro_tracker_pt2.zip` zainstaluj przez PortMaster.
 
@@ -45,3 +52,6 @@ Ghost jest rysowany jako szare tło *pod* tekstem patternu, w dwóch trybach wy�
 `bash tests/check.sh` uruchamia lokalne testy sterowania, idempotencji patchera i kodu ghosta. GitHub Actions dopiero zbuduje prawdziwe PT2 na ARM64. Przed użyciem na występie sprawdź na kopii MOD, czy ghost porusza się prawidłowo i nic nie zatrzymuje odtwarzania.
 
 Song title: click SONGNAME with X, D-pad UP/DOWN cycles characters, LEFT/RIGHT navigates, X confirms/advances, Y finishes and keeps name. SAVE MODULE persists it.
+
+### v0.3.7
+SELECT+B then D-pad to expand gray selection and B to copy. SELECT+B+L1 copies channel; SELECT+B+R1 copies pattern. SELECT+A pastes saved block/channel/pattern.

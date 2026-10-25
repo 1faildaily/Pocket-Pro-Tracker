@@ -86,7 +86,7 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.4: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
+# PPT v0.3.7: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
 # into the on-screen editor at each tick. Prevent that only during LIVE EDIT.
 # The Paula transport continues on song->row/modPattern/modPos independently.
 replayer=root/'src'/'pt2_replayer.c'
@@ -112,7 +112,7 @@ else:
     print('PT2 frozen editor/playhead already patched')
 
 
-# PPT v0.3.4: gray ghost bar is part of the original PATTERN glyph renderer.
+# PPT v0.3.7: gray ghost bar is part of the original PATTERN glyph renderer.
 # The playback row is visible only when it belongs to the CURRENTLY EDITED
 # pattern, and is inside the fixed 15-row viewport. Draw behind notes so no
 # alpha-overlay can wash out the ProTracker font.
@@ -175,7 +175,97 @@ if 'ppt_ghost_row(' not in ps:
 else:
     print('PT2 ghost pattern-view already patched')
 
-# PPT v0.3.4: leave PT2's original renderer alone. The user prefers the
+
+# PPT v0.3.7: highlight individual NOTE, sample nibble, FX command, and
+# parameter nibble fields during SELECT+B rectangular selection. Use the
+# same native PT2 background-aware glyph functions, NOT translucent overlay
+# above the text. That keeps digits readable and leaves gray playback ghost
+# visible in all unselected cells.
+ps=viewer.read_text()
+if 'pptSelectionBg(' not in ps:
+    import re
+    # v1.92 draws normal and dotted patterns through 4 channel loops.
+    needle='for (int32_t j = 0; j < PAULA_VOICES; j++, note++)'
+    if ps.count(needle)!=4:
+        raise AssertionError(f'PT2 pattern-view channel loops changed: found {ps.count(needle)}, expected 4')
+    helper="""
+/* PPT v0.3.7 selection tint behind individual native glyphs. */
+static uint32_t pptSelectionBg(int row, int chan, int field, uint32_t original)
+{
+    return ppt_selection_contains(song->currPattern, row, chan, field) ? 0xFF858585u : original;
+}
+static uint32_t pptSelectionFg(int row, int chan, int field, uint32_t original)
+{
+    return ppt_selection_contains(song->currPattern, row, chan, field) ? video.palette[PAL_GENTXT] : original;
+}
+"""
+    # before note formatting routine so all 4 render branches can use helpers.
+    anchor='static int32_t periodToNote('
+    assert ps.count(anchor)==1, 'PT2 note-name formatter changed'
+    ps=ps.replace(anchor,helper+'\n'+anchor,1)
+    # Isolate 4 brace-delimited per-channel render bodies without altering
+    # palette and gray playback ghost of ROW numbers.
+    regions=[];start=0
+    for _ in range(4):
+        at=ps.index(needle,start);op=ps.index('{',at)
+        depth=1;k=op+1
+        while depth and k<len(ps):
+            if ps[k]=='{':depth+=1
+            elif ps[k]=='}':depth-=1
+            k+=1
+        assert depth==0
+        regions.append((op,k))
+        start=k
+    for op,k in reversed(regions):
+        block=ps[op:k]
+        big='textOutBigBg' in block
+        font='BigBg' if big else 'Bg'
+        # Guard source assumptions on NOTE/SMP/FX/param for both normal/dotted.
+        assert 'noteNames[periodToNote(note->period)]' in block
+        assert 'note->sample' in block and 'note->command' in block and 'note->param' in block
+        assert 'note->param,' in block
+        # Selection is rendered at character/field resolution. Two-digit
+        # PARAM must be split into two separate glyph draws.
+        font_names=['textOut'+font,'charOut'+font,'printOneHex'+font,'printTwoHex'+font]
+        stmt=re.compile(r'(?m)^(?P<indent>\s*)(?P<fn>'+ '|'.join(font_names) +r')\(x\s*,\s*y\s*,\s*(?P<arg>.*?),\s*(?P<fg>video\.palette\[PAL_GENTXT\]|pptGhostText|video\.palette\[PAL_PATTXT\]),\s*(?P<bg>video\.palette\[PAL_GENBKG\]|pptGhostBg|video\.palette\[PAL_BACKGRD\])\);')
+        def wrap(fn,coord,arg,field,fg,bg,indent):
+            return (indent+f'{fn}({coord}, y, {arg}, '
+                    f'pptSelectionFg(row, j, {field}, {fg}), '
+                    f'pptSelectionBg(row, j, {field}, {bg}));')
+        seen={'note':0,'sample':0,'command':0,'param':0,'dots':0}
+        def sub(m):
+            fn,arg,fg,bg,indent=m.group('fn','arg','fg','bg','indent')
+            if 'noteNames[' in arg:
+                seen['note']+=1;return wrap(fn,'x',arg,0,fg,bg,indent)
+            if 'emptyDottedSample' in arg:
+                seen['dots']+=1
+                cfn='charOut'+font
+                return ('\n'.join([wrap(cfn,'x','0x02',1,fg,bg,indent),wrap(cfn,'x+8','0x02',2,fg,bg,indent)]))
+            if 'emptyDottedEffect' in arg:
+                seen['dots']+=1
+                cfn='charOut'+font
+                return '\n'.join([wrap(cfn,'x','0x02',3,fg,bg,indent),wrap(cfn,'x+8','0x02',4,fg,bg,indent),wrap(cfn,'x+16','0x02',5,fg,bg,indent)])
+            if arg=='smpChar':
+                seen['sample']+=1;return wrap(fn,'x',arg,1,fg,bg,indent)
+            if 'note->sample' in arg:
+                seen['sample']+=1;return wrap(fn,'x',arg,2,fg,bg,indent)
+            if 'note->command' in arg:
+                seen['command']+=1;return wrap(fn,'x',arg,3,fg,bg,indent)
+            if arg=='note->param':
+                seen['param']+=1
+                cfn='printOneHex'+font
+                return '\n'.join([wrap(cfn,'x','(note->param >> 4)',4,fg,bg,indent),wrap(cfn,'x+8','(note->param & 0x0F)',5,fg,bg,indent)])
+            return m.group(0)
+        block,num=stmt.subn(sub,block)
+        assert seen['note']==1 and seen['param']>=1, f'PT2 selection glyph patch failed: {seen}'
+        assert num>=4, f'PT2 render glyph changes unexpected: {num}'
+        ps=ps[:op]+block+ps[k:]
+    assert ps.count('pptSelectionBg(row, j,')>=24
+    viewer.write_text(ps)
+else:
+    print('PT2 field-accurate rectangular selection already patched')
+
+# PPT v0.3.7: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.4 original PT2 fullscreen renderer retained')
+print('PPT v0.3.7 original PT2 fullscreen renderer retained')

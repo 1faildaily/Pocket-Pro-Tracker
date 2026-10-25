@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.5 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.7 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -83,7 +83,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.5 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.7 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -112,7 +112,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.5 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.7 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -181,7 +181,7 @@ static void updateAnalogMouse(void){
 }
 
 
-/* PPT v0.3.5: character carousel exclusively for ProTracker's native
+/* PPT v0.3.6: character carousel exclusively for ProTracker's native
    SONGNAME field. Enter the field with the existing mouse/X action.
    The MOD stores a maximum of 20 single-byte characters, and PT2's
    leaveTextEditMode() records the change and updates the filename state.
@@ -215,7 +215,32 @@ static void songNameCycle(int step){
   if(old==0 && p<song->header.name+20)p[1]='\0';
   song->header.name[20]='\0';
   ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.5 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
+}
+/* B = native-style Backspace in SONGNAME: delete the character before
+   the caret, shift remaining characters left, and move the caret left.
+   No SDL keyboard event is synthesized here because the PT2 text editor
+   has already been entered by the X mouse click and this module owns the
+   SONGNAME carousel controls. Other edit fields retain normal B behavior. */
+static void songNameBackspace(void){
+  if(!isSongNameEdit())return;
+  char *const name=song->header.name;
+  const size_t len=strnlen(name,20);
+  /* If the caret was moved past the current string end, first bring it
+     back to the end; do not skip unrelated characters on deletion. */
+  while(textEdit.textPtr>name+len && textEdit.textPtr>name)
+    editTextPrevChar();
+  if(textEdit.textPtr<=name)return; /* first character: nothing to erase */
+  const size_t idx=(size_t)(textEdit.textPtr-name)-1;
+  if(idx<len){
+    /* Include the terminating NUL. In-place overlapping copy must use
+       memmove, not memcpy, or the suffix can become corrupted. */
+    memmove(name+idx,name+idx+1,len-idx);
+  }
+  editTextPrevChar();
+  name[20]='\0';
+  ui.updateSongName=true;
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME backspace pos=%zu name='%s'\n",idx,name);fflush(inputLog);}
 }
 static void songNameAdvance(void){
   if(!isSongNameEdit())return;
@@ -234,7 +259,7 @@ static void songNameFinish(void){
   /* Native PT2 commit; importantly this does NOT clear the string. */
   leaveTextEditMode(EDIT_TEXT_UPDATE);
   ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.5 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
 }
 
 static void processHatAxis(unsigned code,int value);
@@ -397,25 +422,118 @@ static void erase(void){
   endPatternWrite(locked);
   changed();
 }
-/* A minimal per-field clipboard. Rectangular multi-row LSDJ selection is NOT ready yet. */
-static bool clipboardSet;
-static note_t clipboard;
-static int clipField;
-static void copyField(void){
-  note_t *n=currentNote();if(!n)return;
-  clipboard=*n;clipField=cursor.pos%6;clipboardSet=true;
+/* PPT v0.3.7: one selection-aware clipboard with three modes:
+   rectangular FIELD block, entire CHANNEL, entire PATTERN.
+   Coordinates use row 0..63 and linear field column 0..23 (4 channels x
+   NOTE, SMP-high, SMP-low, FX, PARAM-high, PARAM-low). This is not the
+   upstream PT2 keyboard clipboard; it is an independent controller clipboard
+   so field-accurate selection and live-edit pasting work consistently. */
+enum {PPT_CLIP_NONE, PPT_CLIP_BLOCK, PPT_CLIP_CHANNEL, PPT_CLIP_PATTERN};
+static struct {
+  int kind, rowLo, rowHi, colLo, colHi, sourceChannel;
+  note_t cells[64][PAULA_VOICES];
+} clip;
+static bool selecting;
+static int markRow, markCol, markPattern;
+
+static bool selectionAllowed(void){
+  return song && !ui.askBoxShown && !ui.editTextFlag &&
+         !ui.diskOpScreenShown && !ui.samplerScreenShown &&
+         (!editor.songPlaying || ppt_live_edit_active());
 }
-static void pasteField(void){
-  if(editor.songPlaying && !liveEditEnabled)return;
-  note_t *n=currentNote();if(!n || !clipboardSet)return;
-  int f=cursor.pos%6;
+/* Rendering queries only the active selection, NOT the saved clipboard.
+   Playback ghost stays independent and is rendered underneath any selected
+   cells (selection gray takes precedence on overlap). */
+bool ppt_selection_contains(int patt,int row,int channel,int field){
+  if(!selecting || !song || patt!=markPattern || row<0 || row>=64 ||
+     channel<0 || channel>=PAULA_VOICES || field<0 || field>=6)return false;
+  const int col=channel*6+field;
+  const int loRow=markRow<song->currRow?markRow:song->currRow;
+  const int hiRow=markRow>song->currRow?markRow:song->currRow;
+  const int loCol=markCol<cursor.pos?markCol:cursor.pos;
+  const int hiCol=markCol>cursor.pos?markCol:cursor.pos;
+  return row>=loRow && row<=hiRow && col>=loCol && col<=hiCol;
+}
+static void cancelSelection(void){
+  if(selecting){selecting=false;ui.updatePatternData=true;}
+}
+static void beginSelection(void){
+  if(!selectionAllowed())return;
+  selecting=true;
+  markRow=clamp((int)song->currRow,0,63);
+  markCol=clamp(cursor.pos,0,23);
+  markPattern=song->currPattern;
+  ui.updatePatternData=true;
+}
+static void stashClip(int kind){
+  if(!selectionAllowed())return;
+  const int pat=song->currPattern;
+  note_t *source=song->patterns[pat];
+  if(!source)return;
+  clip.kind=kind;
+  clip.sourceChannel=clamp((int)cursor.channel,0,3);
+  if(kind==PPT_CLIP_BLOCK){
+    if(!selecting || markPattern!=pat)return;
+    clip.rowLo=markRow<song->currRow?markRow:song->currRow;
+    clip.rowHi=markRow>song->currRow?markRow:song->currRow;
+    clip.colLo=markCol<cursor.pos?markCol:cursor.pos;
+    clip.colHi=markCol>cursor.pos?markCol:cursor.pos;
+  }else{
+    clip.rowLo=0;clip.rowHi=63;
+    clip.colLo=kind==PPT_CLIP_CHANNEL?clip.sourceChannel*6:0;
+    clip.colHi=kind==PPT_CLIP_CHANNEL?clip.colLo+5:23;
+  }
   const bool locked=beginPatternWrite();
-  if(f==CURSOR_NOTE)n->period=clipboard.period;
-  else if(f==CURSOR_SAMPLE1 || f==CURSOR_SAMPLE2)n->sample=clipboard.sample;
-  else if(f==CURSOR_CMD)n->command=clipboard.command;
-  else n->param=clipboard.param;
+  memcpy(clip.cells,source,sizeof(clip.cells));
+  endPatternWrite(locked);
+  cancelSelection();
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+    clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
+}
+static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
+  /* Field-to-field paste preserves the meaning of the SOURCE column.
+     A NOTE pasted onto NOTE replaces only pitch; a single SAMPLE/PARAM
+     nibble preserves the destination's other nibble. */
+  if(srcField!=dstField)return;
+  switch(dstField){
+    case CURSOR_NOTE: dst->period=src->period;break;
+    case CURSOR_SAMPLE1:dst->sample=(dst->sample&0x0F)|(src->sample&0xF0);break;
+    case CURSOR_SAMPLE2:dst->sample=(dst->sample&0xF0)|(src->sample&0x0F);break;
+    case CURSOR_CMD:dst->command=src->command;break;
+    case CURSOR_PARAM1:dst->param=(dst->param&0x0F)|(src->param&0xF0);break;
+    case CURSOR_PARAM2:dst->param=(dst->param&0xF0)|(src->param&0x0F);break;
+  }
+}
+static void pasteClip(void){
+  if(!selectionAllowed() || clip.kind==PPT_CLIP_NONE)return;
+  note_t *dest=song->patterns[song->currPattern];
+  if(!dest)return;
+  /* Whole PATTERN is unconditional 64x4 overwrite, just like ALT+F5.
+     Whole CHANNEL starts at row 0 in CURRENT channel, like SHIFT+F5.
+     Selected BLOCK uses current row/field as its top-left anchor. */
+  const int startRow=clip.kind==PPT_CLIP_BLOCK?(int)song->currRow:0;
+  const int startCol=clip.kind==PPT_CLIP_BLOCK?cursor.pos:
+                     clip.kind==PPT_CLIP_CHANNEL?cursor.channel*6:0;
+  const int rowCount=clip.rowHi-clip.rowLo+1;
+  const int colCount=clip.colHi-clip.colLo+1;
+  const bool locked=beginPatternWrite();
+  for(int r=0;r<rowCount && startRow+r<64;r++){
+    for(int c=0;c<colCount && startCol+c<24;c++){
+      const int sourceCol=clip.colLo+c, targetCol=startCol+c;
+      const int sourceRow=clip.rowLo+r;
+      const note_t *src=&clip.cells[sourceRow][sourceCol/6];
+      note_t *dst=&dest[(startRow+r)*PAULA_VOICES+targetCol/6];
+      /* For rectangular field pasting, map note/sample/FX positions by
+         RELATIVE field index (e.g. NOTE=>NOTE when copying a channel).
+         For a one-column block pasted to another type of field, we don't
+         silently reinterpret notes as effect parameters. */
+      copyFieldValue(dst,src,sourceCol%6,targetCol%6);
+    }
+  }
   endPatternWrite(locked);
   changed();
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 PASTE kind=%d to patt=%d row=%d col=%d\n",
+   clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
    pattern from the selected ROW; MENU+START plays SONG from selected POSITION.
@@ -502,6 +620,7 @@ static void buttonEvent(int b,bool down){
   if(isSongNameEdit()){
     if(b==PPT_BTN_X){songNameAdvance();return;}
     if(b==PPT_BTN_Y){songNameFinish();return;}
+    if(b==PPT_BTN_B){songNameBackspace();return;}
   }
   if(b!=PPT_BTN_SELECT && held[PPT_BTN_SELECT])selectChordUsed=true;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;return;}
@@ -533,6 +652,14 @@ static void buttonEvent(int b,bool down){
           startWithMenu=held[PPT_BTN_MENU];}
     return;
   }
+  /* Shortcut SELECT+B+L1/R1: native-style CHANNEL/PATTERN copy.
+     This must win over pattern switching and over R1+D-pad mouse mode. */
+  if((b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
+     held[PPT_BTN_SELECT] && held[PPT_BTN_B]){
+    shoulderUsed[b==PPT_BTN_R1]=true;
+    stashClip(b==PPT_BTN_L1?PPT_CLIP_CHANNEL:PPT_CLIP_PATTERN);
+    return;
+  }
   if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
     startPending=false;
     shoulderUsed[0]=true;
@@ -547,13 +674,18 @@ static void buttonEvent(int b,bool down){
     return;
   }
   if(b==PPT_BTN_A){
-    if(held[PPT_BTN_B]){copyField();erase();}
-    else if(held[PPT_BTN_SELECT])pasteField();
+    if(held[PPT_BTN_SELECT])pasteClip();
+    else if(held[PPT_BTN_B])erase(); /* legacy B+A clears selected field */
     else insert();
   }else if(b==PPT_BTN_B){
-    if(held[PPT_BTN_SELECT])copyField();
-    else if(held[PPT_BTN_A]){copyField();erase();}
-    else copyField();
+    if(held[PPT_BTN_SELECT]){
+      if(selecting){stashClip(PPT_CLIP_BLOCK);}
+      else if(held[PPT_BTN_R1]){shoulderUsed[1]=true;stashClip(PPT_CLIP_PATTERN);}
+      else if(held[PPT_BTN_L1]){shoulderUsed[0]=true;stashClip(PPT_CLIP_CHANNEL);}
+      else beginSelection(); /* first SELECT+B starts gray selection */
+    }else if(selecting){stashClip(PPT_CLIP_BLOCK);} /* next B confirms */
+    else if(held[PPT_BTN_A])erase();
+    /* No separate single-field B clipboard. SELECT+B can mark one field. */
   }
   /* X/Y are the reliable mouse clicks in all screens; legacy L2/R2
      clicks are kept while an askBox or disk operation screen is open. */
@@ -571,7 +703,7 @@ static void releaseButton(int b){
   if(b<0||b>=C_COUNT || !held[b])return;
   /* SELECT alone toggles live editing, but SELECT+A/B/START never does. */
   const bool doLive=(b==PPT_BTN_SELECT && !selectChordUsed &&
-      editor.songPlaying && !ui.askBoxShown && !ui.editTextFlag);
+      editor.songPlaying && !selecting && !ui.askBoxShown && !ui.editTextFlag);
   /* Execute START when released so L1+START cannot accidentally PLAY. */
   const bool doStart=(b==PPT_BTN_START && startPending && !exitChordSent && !held[PPT_BTN_L1] && !ui.askBoxShown);
   /* MENU wins if both MENU and SELECT are held. */
@@ -579,7 +711,7 @@ static void releaseButton(int b){
                           startWithShift?PPT_PLAY_PATTERN_ROW:PPT_PLAY_PATTERN;
   const bool doPattern=(b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
       !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
-      !held[PPT_BTN_MENU] && !ui.askBoxShown;
+      !held[PPT_BTN_MENU] && !held[PPT_BTN_SELECT] && !selecting && !ui.askBoxShown;
   held[b]=false;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;if(doLive)toggleLiveEdit();}
   if(b==PPT_BTN_START){startPending=false;startWithShift=false;
@@ -605,6 +737,18 @@ static void directionAction(int d){
     return;
   }
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
+  if(selecting){
+    /* Selection uses independent navigation; a held R1 is reserved for the
+       SELECT+B+R1 whole-pattern chord, never virtual-mouse movement here. */
+    if(song && markPattern==(int)song->currPattern){
+      if(d==0)song->currRow=clamp((int)song->currRow-1,0,63);
+      else if(d==1)song->currRow=clamp((int)song->currRow+1,0,63);
+      else cursor.pos=clamp(cursor.pos+(d==2?-1:1),0,23);
+      cursor.channel=cursor.pos/6;
+      ui.updatePatternData=true;updateCursorPos();
+    }
+    return;
+  }
   /* During askBox(), the D-pad controls the pointer, not the pattern.
      The askBox owns a separate event loop but still calls ppt_input_update(). */
   if(held[PPT_BTN_R1])shoulderUsed[1]=true;
@@ -640,7 +784,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.5 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.7 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -692,7 +836,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.5 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.7 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -703,7 +847,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.5 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.7 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }
