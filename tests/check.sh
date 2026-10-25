@@ -64,5 +64,5 @@ from pathlib import Path
 s=Path('.github/workflows/build-ppt-arm64.yml').read_text()
 assert 'FULLSCREENSTRETCH=TRUE' in s and 'INTEGERSCALING=FALSE' not in s
 assert 'ppt_scale' not in Path('patch/apply_patch.py').read_text()
-print('Legacy fullscreen configuration OK (v0.3.3)')
+print('Legacy fullscreen configuration OK (v0.3.4)')
 PY

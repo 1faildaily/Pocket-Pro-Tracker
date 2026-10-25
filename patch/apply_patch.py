@@ -86,7 +86,7 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.3: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
+# PPT v0.3.4: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
 # into the on-screen editor at each tick. Prevent that only during LIVE EDIT.
 # The Paula transport continues on song->row/modPattern/modPos independently.
 replayer=root/'src'/'pt2_replayer.c'
@@ -112,7 +112,7 @@ else:
     print('PT2 frozen editor/playhead already patched')
 
 
-# PPT v0.3.3: gray ghost bar is part of the original PATTERN glyph renderer.
+# PPT v0.3.4: gray ghost bar is part of the original PATTERN glyph renderer.
 # The playback row is visible only when it belongs to the CURRENTLY EDITED
 # pattern, and is inside the fixed 15-row viewport. Draw behind notes so no
 # alpha-overlay can wash out the ProTracker font.
@@ -175,7 +175,7 @@ if 'ppt_ghost_row(' not in ps:
 else:
     print('PT2 ghost pattern-view already patched')
 
-# PPT v0.3.3: leave PT2's original renderer alone. The user prefers the
+# PPT v0.3.4: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.3 original PT2 fullscreen renderer retained')
+print('PPT v0.3.4 original PT2 fullscreen renderer retained')

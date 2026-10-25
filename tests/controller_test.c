@@ -11,6 +11,8 @@ ui_t ui;
 mouse_t mouse;
 cursor_t cursor;
 video_t video;
+textEdit_t textEdit;
+static int textCommitted, textMovedRight, textMovedLeft;
 static int playCalls, playPatt, playPos, playRow, stopCalls;
 static int pointerModeCalls, statusCalls;
 static int previewCalls,previewPitch,previewSample;
@@ -33,6 +35,12 @@ void sampleDownButton(void){if(editor.currSample>0)editor.currSample--;updateCur
 static int pointerModeLast;
 void pointerSetMode(uint8_t mode,bool carry){assert((mode==POINTER_MODE_PLAY || mode==POINTER_MODE_IDLE || mode==POINTER_MODE_EDIT) && carry==DO_CARRY);pointerModeLast=mode;pointerModeCalls++;}
 void statusAllRight(void){statusCalls++;}
+void editTextPrevChar(void){if(textEdit.textPtr>textEdit.textStartPtr)textEdit.textPtr--;
+ textMovedLeft++;}
+void editTextNextChar(void){if(textEdit.textPtr<textEdit.textEndPtr && *textEdit.textPtr)
+ {textEdit.textPtr++;textMovedRight++;}}
+void leaveTextEditMode(int update){assert(update==EDIT_TEXT_UPDATE);ui.editTextFlag=false;
+ state.modified=true;textCommitted++;}
 void updateCursorPos(void){}
 void setSpritePos(int s,int x,int y){(void)s;(void)x;(void)y;}
 unsigned int SDL_GetTicks(void){return 0;}
@@ -127,6 +135,23 @@ int main(void){
   assert(precisionMouseStep(8000)>0);
   assert(precisionMouseStep(32767)>precisionMouseStep(8000));
   assert(precisionMouseStep(-8000)==-precisionMouseStep(8000));
+  /* v0.3.5: all mouse speeds 70% of v0.3.4, without changing curve/deadzone.
+     Check both analog (fixed point) and R1+D-pad/askBox digital mouse. */
+  assert(MOUSE_SPEED_NUM==7 && MOUSE_SPEED_DEN==10);
+  int slowFrac=0, slowTotal=0;
+  for(int i=0;i<10;i++)slowTotal+=scaledMousePixels(6,&slowFrac,1);
+  assert(slowTotal==42 && slowFrac==0); /* formerly 60px */
+  for(int i=0;i<10;i++)slowTotal+=scaledMousePixels(-6,&slowFrac,1);
+  assert(slowTotal==0 && slowFrac==0);
+  slowFrac=0;slowTotal=0;
+  for(int i=0;i<1024;i++)slowTotal+=scaledMousePixels(precisionMouseStep(32767),&slowFrac,MOUSE_ANALOG_DEN);
+  assert(slowTotal==(precisionMouseStep(32767)*7)/10);
+  slowFrac=0;slowTotal=0;
+  for(int i=0;i<1024;i++)slowTotal+=scaledMousePixels(precisionMouseStep(8000),&slowFrac,MOUSE_ANALOG_DEN);
+  assert(slowTotal==(precisionMouseStep(8000)*7)/10);
+  /* Full joystick deflection is slower too; mouse curve remains untouched. */
+  assert(precisionMouseStep(32767)==2663);
+
   /* No hidden edits are allowed while playing but LIVE EDIT is off. */
   editor.songPlaying=true;atomic_store(&liveEditEnabled,false);
   state.currRow=6;cursor.pos=0;patt[24].period=periods[2];patt[24].sample=3;
@@ -176,6 +201,56 @@ int main(void){
   assert(lastEvent.key.keysym.scancode==SDL_SCANCODE_ESCAPE);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_L1);
   assert(state.currPattern==7);
-  puts("PPT v0.3.3: frozen edit row, pattern switching, independent transport, menu+start OK");
+  /* Native SONGNAME string editing: X enters by clicking songname in PT2;
+     the carousel only takes over once the native ui.editTextFlag is set. */
+  editor.songPlaying=false;
+  ui.editTextFlag=true;ui.askBoxShown=false;
+  textEdit.type=TEXT_EDIT_STRING;textEdit.object=PTB_SONGNAME;
+  textEdit.textStartPtr=state.header.name;
+  textEdit.textEndPtr=state.header.name+19;
+  textEdit.textPtr=textEdit.textStartPtr;
+  memset(state.header.name,0,sizeof(state.header.name));
+  directionAction(0);assert(strcmp(state.header.name,"a")==0);
+  directionAction(0);assert(strcmp(state.header.name,"b")==0);
+  directionAction(1);assert(strcmp(state.header.name,"a")==0);
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(textEdit.textPtr==state.header.name+1 && !mouseDownForwarded[PPT_BTN_X]);
+  directionAction(1);assert(state.header.name[1]=='_');
+  directionAction(0);assert(state.header.name[1]==' ');
+  directionAction(0);assert(state.header.name[1]=='a');
+  /* LEFT/RIGHT are native text navigation. */
+  directionAction(2);assert(textEdit.textPtr==state.header.name);
+  directionAction(3);assert(textEdit.textPtr==state.header.name+1);
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.editTextFlag && textCommitted==1);
+  assert(strcmp(state.header.name,"aa")==0 && state.modified);
+  /* Outside SONGNAME, X/Y remain mouse buttons. Even if edit activates
+     between mouse-down and mouse-up, the original release must be sent. */
+  state.modified=false;ui.editTextFlag=false;video.window=(SDL_Window*)1;
+  buttonEvent(PPT_BTN_X,true);
+  assert(mouseDownForwarded[PPT_BTN_X] && lastEvent.type==SDL_MOUSEBUTTONDOWN);
+  ui.editTextFlag=true;
+  buttonEvent(PPT_BTN_X,true); /* ignored as held */
+  releaseButton(PPT_BTN_X);
+  assert(!mouseDownForwarded[PPT_BTN_X] && lastEvent.type==SDL_MOUSEBUTTONUP);
+  ui.editTextFlag=false;
+  buttonEvent(PPT_BTN_Y,true);assert(mouseDownForwarded[PPT_BTN_Y]);
+  releaseButton(PPT_BTN_Y);assert(!mouseDownForwarded[PPT_BTN_Y]);
+  /* 20-character limit, memory-safe continuation and native exit. */
+  memset(state.header.name,'x',20);state.header.name[20]='\0';
+  ui.editTextFlag=true;textEdit.object=PTB_SONGNAME;
+  textEdit.textPtr=state.header.name+19;
+  directionAction(0);assert(state.header.name[20]=='\0');
+  int oldMoves=textMovedRight;
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(textEdit.textPtr==state.header.name+19 && textMovedRight==oldMoves);
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.editTextFlag && textCommitted==2);
+  /* Sample names and numeric text editing are unaffected. */
+  ui.editTextFlag=true;textEdit.object=PTB_SONGNAME+1;
+  assert(!isSongNameEdit());
+  ui.editTextFlag=false;
+
+  puts("PPT v0.3.5: transport, ghost, song name carousel, all mouse speeds -30% OK");
   return 0;
 }

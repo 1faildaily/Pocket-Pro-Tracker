@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.3 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.5 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -26,6 +26,7 @@
 #include "pt2_replayer.h"
 #include "pt2_audio.h"
 #include "pt2_helpers.h"
+#include "pt2_textedit.h"
 #include "ppt_input.h"
 
 #define DEVICES 16
@@ -33,7 +34,13 @@
 #define REPEAT_DELAY 85
 #define MOUSE_STEP 6
 #define MOUSE_DEADZONE 4200
-#define MOUSE_SPEED_DEN 1024
+/* Universal speed multiplier for ALL virtual-mouse input paths.
+   7/10 = exactly 30% slower than v0.3.4 at any analog deflection
+   and in R1+D-pad / askBox D-pad navigation. Keep fractional pixels
+   so slower movement remains smooth and never gets rounded to zero. */
+#define MOUSE_SPEED_NUM 7
+#define MOUSE_SPEED_DEN 10
+#define MOUSE_ANALOG_DEN 1024
 #define MOUSE_FINE_LINEAR 205
 #define MOUSE_FINE_CURVE 2458
 #define SCREEN_MOUSE_W 320
@@ -76,7 +83,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.3 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.5 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -91,6 +98,7 @@ static axis_t axis[TRACKED_AXES];
 static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
 static int mouseFracX, mouseFracY;
+static int mouseDpadFracX, mouseDpadFracY;
 static int logDirections, logAxes, logButtons, logUnmapped;
 static int analogByDevice[DEVICES][TRACKED_AXES];
 /* The MENU/M button may use a non-standard evdev code on muOS.
@@ -104,7 +112,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.3 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.5 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -149,6 +157,16 @@ static int precisionMouseStep(int normalized){
   int result=(int)(linear+curve);
   return normalized<0?-result:result;
 }
+/* Apply the same 70% speed factor to analog and D-pad mouse movement.
+   sourceDen=1024 for analog fixed-point steps, 1 for D-pad pixel steps.
+   The accumulator preserves subpixel motion and exact average speed. */
+static int scaledMousePixels(int step, int *fraction, int sourceDen){
+  const int denom=sourceDen*MOUSE_SPEED_DEN;
+  const int total=step*MOUSE_SPEED_NUM+*fraction;
+  const int pixels=total/denom;
+  *fraction=total-pixels*denom;
+  return pixels;
+}
 static void updateAnalogMouse(void){
   /* Left stick confirmed on this unit: ABS_Z=2 horizontal, ABS_RX=3 vertical.
      Pixel fractions accumulate until a full pixel can be moved; slow nudges
@@ -157,12 +175,66 @@ static void updateAnalogMouse(void){
   const int y=precisionMouseStep(axisAmount(ABS_RX));
   if(!x)mouseFracX=0;
   if(!y)mouseFracY=0;
-  mouseFracX+=x;mouseFracY+=y;
-  const int dx=mouseFracX/MOUSE_SPEED_DEN;
-  const int dy=mouseFracY/MOUSE_SPEED_DEN;
-  mouseFracX-=dx*MOUSE_SPEED_DEN;
-  mouseFracY-=dy*MOUSE_SPEED_DEN;
+  const int dx=scaledMousePixels(x,&mouseFracX,MOUSE_ANALOG_DEN);
+  const int dy=scaledMousePixels(y,&mouseFracY,MOUSE_ANALOG_DEN);
   moveVirtualMouse(dx,dy);
+}
+
+
+/* PPT v0.3.5: character carousel exclusively for ProTracker's native
+   SONGNAME field. Enter the field with the existing mouse/X action.
+   The MOD stores a maximum of 20 single-byte characters, and PT2's
+   leaveTextEditMode() records the change and updates the filename state.
+   No separate name buffer means SAVE MODULE uses the same song name. */
+static const char songNameChars[]=" abcdefghijklmnopqrstuvwxyz0123456789-_";
+static bool mouseDownForwarded[C_COUNT];
+static bool isSongNameEdit(void){
+  return song && ui.editTextFlag && textEdit.type==TEXT_EDIT_STRING &&
+         textEdit.object==PTB_SONGNAME &&
+         textEdit.textStartPtr==song->header.name &&
+         textEdit.textPtr>=textEdit.textStartPtr &&
+         textEdit.textPtr<=textEdit.textEndPtr;
+}
+/* Browse characters in-place, preserving all other characters.
+   For a newly appended character keep a trailing NUL within name[21]. */
+static void songNameCycle(int step){
+  if(!isSongNameEdit())return;
+  char *p=textEdit.textPtr;
+  int idx=0;
+  const char old=*p;
+  const int n=(int)(sizeof(songNameChars)-1);
+  for(int i=0;i<n;i++){
+    if(songNameChars[i]==old ||
+      ((old>='A' && old<='Z') && songNameChars[i]==old-'A'+'a')){
+      idx=i;break;
+    }
+  }
+  idx=(idx+step+n)%n;
+  /* old==0 means this is the end of the current song name. */
+  *p=songNameChars[idx];
+  if(old==0 && p<song->header.name+20)p[1]='\0';
+  song->header.name[20]='\0';
+  ui.updateSongName=true;
+  if(inputLog){fprintf(inputLog,"PPT 0.3.5 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
+}
+static void songNameAdvance(void){
+  if(!isSongNameEdit())return;
+  /* A blank cell is confirmed as space. This also permits proceeding
+     through a name using X without first changing every character. */
+  if(*textEdit.textPtr=='\0'){
+    *textEdit.textPtr=' ';
+    if(textEdit.textPtr<song->header.name+20)textEdit.textPtr[1]='\0';
+    song->header.name[20]='\0';
+    ui.updateSongName=true;
+  }
+  editTextNextChar();
+}
+static void songNameFinish(void){
+  if(!isSongNameEdit())return;
+  /* Native PT2 commit; importantly this does NOT clear the string. */
+  leaveTextEditMode(EDIT_TEXT_UPDATE);
+  ui.updateSongName=true;
+  if(inputLog){fprintf(inputLog,"PPT 0.3.5 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
 }
 
 static void processHatAxis(unsigned code,int value);
@@ -424,6 +496,13 @@ static void buttonEvent(int b,bool down){
   if(held[b]==down)return;
   held[b]=down;
   if(!down)return;
+  /* SONGNAME editing has priority over the normal X/Y mouse buttons.
+     A mouse-down which originally entered the field is tracked and will
+     still get a matching mouse-up when the key is released. */
+  if(isSongNameEdit()){
+    if(b==PPT_BTN_X){songNameAdvance();return;}
+    if(b==PPT_BTN_Y){songNameFinish();return;}
+  }
   if(b!=PPT_BTN_SELECT && held[PPT_BTN_SELECT])selectChordUsed=true;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;return;}
   if(ui.askBoxShown){
@@ -485,6 +564,7 @@ static void buttonEvent(int b,bool down){
     evt.type=SDL_MOUSEBUTTONDOWN;
     evt.button.button=(b==PPT_BTN_X || b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
     evt.button.state=SDL_PRESSED;SDL_PushEvent(&evt);
+    mouseDownForwarded[b]=true;
   }
 }
 static void releaseButton(int b){
@@ -508,9 +588,8 @@ static void releaseButton(int b){
   if(doStart)startPlayback(transportMode);
   if(doPattern)changePattern(b==PPT_BTN_L1?-1:1);
   if(b==PPT_BTN_L1 || b==PPT_BTN_R1)shoulderUsed[b==PPT_BTN_R1]=false;
-  const bool legacy=(ui.askBoxShown || ui.diskOpScreenShown || ui.editTextFlag);
-  if(video.window && (b==PPT_BTN_X || b==PPT_BTN_Y ||
-     (legacy && (b==PPT_BTN_R2 || b==PPT_BTN_L2)))){
+  if(video.window && mouseDownForwarded[b]){
+    mouseDownForwarded[b]=false;
     SDL_Event evt;memset(&evt,0,sizeof(evt));
     evt.type=SDL_MOUSEBUTTONUP;
     evt.button.button=(b==PPT_BTN_X || b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
@@ -518,13 +597,22 @@ static void releaseButton(int b){
   }
 }
 static void directionAction(int d){
+  if(isSongNameEdit()){
+    if(d==0)songNameCycle(+1);       /* UP -> next char */
+    else if(d==1)songNameCycle(-1);  /* DOWN -> previous char */
+    else if(d==2)editTextPrevChar(); /* LEFT -> previous position */
+    else editTextNextChar();         /* RIGHT -> next position */
+    return;
+  }
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
   /* During askBox(), the D-pad controls the pointer, not the pattern.
      The askBox owns a separate event loop but still calls ppt_input_update(). */
   if(held[PPT_BTN_R1])shoulderUsed[1]=true;
   if(ui.askBoxShown || held[PPT_BTN_R1]){
-    int dx=(d==2?-MOUSE_STEP:(d==3?MOUSE_STEP:0));
-    int dy=(d==0?-MOUSE_STEP:(d==1?MOUSE_STEP:0));
+    const int baseX=(d==2?-MOUSE_STEP:(d==3?MOUSE_STEP:0));
+    const int baseY=(d==0?-MOUSE_STEP:(d==1?MOUSE_STEP:0));
+    const int dx=scaledMousePixels(baseX,&mouseDpadFracX,1);
+    const int dy=scaledMousePixels(baseY,&mouseDpadFracY,1);
     moveVirtualMouse(dx,dy);
   }else if(held[PPT_BTN_A])edit(d);
   else navigate(d);
@@ -552,7 +640,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.3 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.5 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -604,7 +692,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.3 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.5 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -615,7 +703,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.3 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.5 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

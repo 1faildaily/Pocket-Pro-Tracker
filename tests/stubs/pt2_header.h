@@ -42,3 +42,6 @@ void SDL_WarpMouseInWindow(SDL_Window*,int,int);
 #define MODE_RECORD 3
 #define POINTER_MODE_EDIT 3
 #define RECORD_PATT 0
+
+#define TEXT_EDIT_STRING 0
+#define EDIT_TEXT_UPDATE 1

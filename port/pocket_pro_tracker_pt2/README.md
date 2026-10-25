@@ -1,8 +1,16 @@
-# Pocket Pro Tracker v0.3.3 · Ghost Playhead + SONG od POSITION
+# Pocket Pro Tracker v0.3.5 · Ghost Playhead + SONG od POSITION
 
 SourceKit bazuje na poprzednim, potwierdzonym na urządzeniu PPT v0.3.2, z oryginalnym silnikiem ProTracker 2 Clone **v1.92**. ZIP zawiera źródła do GitHub Desktop, nie gotowy program ARM64.
 
-## Zmiany v0.3.3
+## Zmiana v0.3.5: precyzyjniejsza mysz (−30% każdej prędkości)
+
+- Lewy analog przesuwa mysz z szybkością **70% poprzedniej wersji** w całym zakresie wychylenia, również przy maksymalnym wychyleniu.
+- Nie zmieniamy martwej strefy ani krzywej przyspieszania. Wolne, średnie i szybkie ruchy są proporcjonalnie spowolnione.
+- Alternatywna mysz **R1 + D-pad**, a także D-pad myszy w oknach dialogowych, są spowolnione o dokładnie tyle samo.
+- Ułamki pikseli są akumulowane, aby zachować płynny ruch przy małym wychyleniu.
+- Pełny ekran, LIVE EDIT, ghost playhead, transport, sample i karuzela SONGNAME są zachowane.
+
+## Poprzednie funkcje zachowane z v0.3.4
 
 **MENU + START**: uruchamia odtwarzanie całego SONG od *aktualnie ustawionej pozycji POS*, zaczynając od ROW 00. Odtwarzany pattern jest pobierany z `song->header.patternTable[song->currPos]` (przez oryginalną funkcję `modPlay(DONT_SET_PATTERN, song->currPos, 0)`). Song dalej przechodzi po następnych pozycjach tabeli.
 
@@ -28,10 +36,12 @@ Ghost jest rysowany jako szare tło *pod* tekstem patternu, w dwóch trybach wy�
 ## Instalacja
 
 1. Rozpakuj SourceKit do repozytorium w GitHub Desktop, zastępując stare pliki (również w ukrytym folderze `.github`).
-2. Summary: `PPT v0.3.3 - Ghost playhead and song from current position`
+2. Summary: `PPT v0.3.5 - All mouse speeds 30 percent slower`
 3. Commit to main → Push origin.
 4. Po zielonej kompilacji pobierz artefakt ZIP, rozpakuj, a wewnętrzny `pocket_pro_tracker_pt2.zip` zainstaluj przez PortMaster.
 
 ## Testy
 
 `bash tests/check.sh` uruchamia lokalne testy sterowania, idempotencji patchera i kodu ghosta. GitHub Actions dopiero zbuduje prawdziwe PT2 na ARM64. Przed użyciem na występie sprawdź na kopii MOD, czy ghost porusza się prawidłowo i nic nie zatrzymuje odtwarzania.
+
+Song title: click SONGNAME with X, D-pad UP/DOWN cycles characters, LEFT/RIGHT navigates, X confirms/advances, Y finishes and keeps name. SAVE MODULE persists it.
