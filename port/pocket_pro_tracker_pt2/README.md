@@ -55,3 +55,7 @@ Song title: click SONGNAME with X, D-pad UP/DOWN cycles characters, LEFT/RIGHT n
 
 ### v0.3.7
 SELECT+B then D-pad to expand gray selection and B to copy. SELECT+B+L1 copies channel; SELECT+B+R1 copies pattern. SELECT+A pastes saved block/channel/pattern.
+
+
+## PPT v0.3.8 — POSITION LOOP
+Kliknij X na POS, by otworzyć POSITION EDITOR. Góra/dół przegląda SONG order, nie zmienia przypisania patternów. SELECT+B rozpoczyna zaznaczenie pozycji, D-pad je rozszerza, B zatwierdza loop, SELECT+Y włącza/wyłącza loop. MENU+START zaczyna SONG od zaznaczonego początku, jeśli loop jest aktywny. W PATTERN EDIT pozostaje schowek LSDJ.

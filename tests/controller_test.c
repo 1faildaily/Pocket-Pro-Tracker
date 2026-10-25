@@ -384,6 +384,64 @@ int main(void){
   assert(!isSongNameEdit());
   ui.editTextFlag=false;
 
-  puts("PPT v0.3.6: song name Backspace, transport, ghost, mouse speeds -30% OK");
+  /* POSITION SELECT belongs to the PT2 POS editor, not pattern/field edit. */
+  state.header.songLength=16;
+  for(int i=0;i<16;i++)state.header.patternTable[i]=i+10;
+  state.currPos=8;state.currPattern=18;cursor.pos=0;
+  editor.songPlaying=false;editor.currMode=MODE_IDLE;
+  ui.posEdScreenShown=true;ui.editTextFlag=false;
+  posLoopOwner=&state;clearPosLoop();
+  const int previousPatt=(int)state.currPattern;
+  directionAction(1);assert(state.currPos==9 && state.currPattern==19);
+  directionAction(0);assert(state.currPos==8 && (int)state.currPattern==previousPatt);
+  assert(state.header.patternTable[8]==18 && state.header.patternTable[9]==19);
+  assert(editor.currPatternDisp==&state.header.patternTable[8]);
+  /* One B starts a rectangular inclusive POS range at the current order. */
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(posMarking && posMarkStart==8 && ppt_loop_entry_style(8)==1);
+  directionAction(1);directionAction(1);directionAction(1);
+  assert(state.currPos==11 && posMarking);
+  assert(ppt_loop_entry_style(10)==1 && ppt_loop_entry_style(12)==0);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(!posMarking && ppt_loop_entry_style(8)==2 && ppt_loop_entry_style(11)==2);
+  assert(ppt_loop_redirect(9,16)==9);
+  assert(ppt_loop_redirect(12,16)==8); /* after last selected POS */
+  assert(ppt_loop_redirect(0,16)==8); /* Bxx outside selected range */
+  assert(ppt_loop_redirect(16,16)==8); /* end of song */
+  /* MENU+START launches loop from first marked order, row 00. */
+  int playsBefore=playCalls;
+  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
+  releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_MENU);
+  assert(playCalls==playsBefore+1 && playPos==8 && playRow==0 && editor.songPlaying);
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
+  assert(!editor.songPlaying);
+  /* Disable via SELECT+Y, and enable again without removing range. */
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
+  releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
+  assert(ppt_loop_entry_style(9)==1 && ppt_loop_redirect(12,16)==12);
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
+  releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
+  assert(ppt_loop_entry_style(9)==2 && ppt_loop_redirect(12,16)==8);
+  /* Menu song play with disabled loop starts at currently selected POS. */
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
+  releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
+  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
+  releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_MENU);
+  assert(playPos==11 && editor.songPlaying);
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
+  /* Position selection remains separate from playback while POS editor open. */
+  editor.songPlaying=true;atomic_store(&posBrowseActive,true);
+  assert(ppt_position_browse_active());
+  int beforeDirection=(int)state.currPos;
+  directionAction(0);
+  assert((int)state.currPos==beforeDirection-1 && editor.songPlaying);
+  editor.songPlaying=false;atomic_store(&posBrowseActive,false);
+  ui.posEdScreenShown=false;
+  /* Clearing a loaded module invalidates the in-session selection. */
+  clearPosLoop();assert(ppt_loop_entry_style(9)==0 && ppt_loop_redirect(12,16)==12);
+  assert(state.header.patternTable[8]==18 && state.header.patternTable[9]==19);
+
+  puts("PPT v0.3.8: POS browse, range preview, loop wrap, transport and toggle OK");
   return 0;
 }

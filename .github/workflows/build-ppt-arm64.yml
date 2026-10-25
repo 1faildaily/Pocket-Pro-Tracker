@@ -30,7 +30,7 @@ jobs:
           install -m 755 upstream/release/other/pt2-clone port/pocket_pro_tracker_pt2/pt2-clone
           cp upstream/release/other/protracker.ini port/pocket_pro_tracker_pt2/protracker.ini
           cat >> port/pocket_pro_tracker_pt2/protracker.ini <<'EOF'
-          ; PPT v0.3.6: retain original full-screen stretch (user preference)
+          ; PPT v0.3.8: retain original full-screen stretch (user preference)
           VIDEOSCALE=1X
           FULLSCREEN=TRUE
           FULLSCREENSTRETCH=TRUE
@@ -44,5 +44,5 @@ jobs:
           unzip -t pocket_pro_tracker_pt2.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: PPT_v0.3.6_PT2_PortMaster_ARM64
+          name: PPT_v0.3.8_PT2_PortMaster_ARM64
           path: pocket_pro_tracker_pt2.zip

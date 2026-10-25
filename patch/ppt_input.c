@@ -61,6 +61,13 @@ static bool shoulderUsed[2];
 /* Audio callback and main SDL thread share this flag. Keep it atomic so
    the replayer can skip ONLY the UI position sync while remaining realtime. */
 static atomic_bool liveEditEnabled;
+/* PT2 POS editor is a separate view. Keep its selection detached from
+   the replayer in SONG playback too, even when LIVE EDIT is disabled. */
+static atomic_bool posBrowseActive;
+bool ppt_position_browse_active(void){
+  return atomic_load_explicit(&posBrowseActive,memory_order_acquire);
+}
+
 static bool selectChordUsed;
 bool ppt_live_edit_active(void){
   return atomic_load_explicit(&liveEditEnabled,memory_order_acquire);
@@ -83,7 +90,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.7 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.8 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -112,7 +119,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.7 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.8 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -215,7 +222,7 @@ static void songNameCycle(int step){
   if(old==0 && p<song->header.name+20)p[1]='\0';
   song->header.name[20]='\0';
   ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
 }
 /* B = native-style Backspace in SONGNAME: delete the character before
    the caret, shift remaining characters left, and move the caret left.
@@ -240,7 +247,7 @@ static void songNameBackspace(void){
   editTextPrevChar();
   name[20]='\0';
   ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME backspace pos=%zu name='%s'\n",idx,name);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 SONGNAME backspace pos=%zu name='%s'\n",idx,name);fflush(inputLog);}
 }
 static void songNameAdvance(void){
   if(!isSongNameEdit())return;
@@ -259,7 +266,7 @@ static void songNameFinish(void){
   /* Native PT2 commit; importantly this does NOT clear the string. */
   leaveTextEditMode(EDIT_TEXT_UPDATE);
   ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
 }
 
 static void processHatAxis(unsigned code,int value);
@@ -436,6 +443,90 @@ static struct {
 static bool selecting;
 static int markRow, markCol, markPattern;
 
+/* PPT 0.3.8 POSITION LOOP. Packed into one atomic word because the audio
+   callback cannot safely lock or read half-updated UI selection state.
+   bits 0-7=first, 8-15=last, 16=range valid, 17=enabled. */
+enum { POS_LOOP_VALID=1<<16, POS_LOOP_ON=1<<17 };
+static atomic_int positionLoop = ATOMIC_VAR_INIT(0);
+static bool posMarking;
+static int posMarkStart;
+static module_t *posLoopOwner;
+static void posLoopRefresh(void){ui.updatePosEd=true;}
+static bool posEditorActive(void){
+  return song && ui.posEdScreenShown && !ui.editTextFlag &&
+    !ui.askBoxShown && !ui.diskOpScreenShown;
+}
+static int posLoopFirst(int packed){return packed&255;}
+static int posLoopLast(int packed){return (packed>>8)&255;}
+/* Called on Paula's audio thread. Only redirects when advancing out of the
+   inclusive range; Bxx/Dxx jumps inside the loop retain their normal effect.
+   Caller resets ROW to 00 when the returned position differs. */
+int ppt_loop_redirect(int proposed, int length){
+  const int info=atomic_load_explicit(&positionLoop,memory_order_acquire);
+  if((info&(POS_LOOP_VALID|POS_LOOP_ON))!=(POS_LOOP_VALID|POS_LOOP_ON) ||
+     length<=0)return proposed;
+  const int lo=posLoopFirst(info), hi=posLoopLast(info);
+  if(lo<0 || hi>=length || lo>hi)return proposed;
+  return proposed<lo || proposed>hi ? lo : proposed;
+}
+/* 1 for marked preview or stored range, even when loop is disabled.
+   2 for the actively looping range, so the status remains visible. */
+int ppt_loop_entry_style(int pos){
+  if(posMarking && song && ui.posEdScreenShown){
+    const int a=posMarkStart, b=(int)song->currPos;
+    return pos>=(a<b?a:b) && pos<=(a>b?a:b) ? 1 : 0;
+  }
+  const int info=atomic_load_explicit(&positionLoop,memory_order_acquire);
+  return (info&POS_LOOP_VALID) && pos>=posLoopFirst(info) &&
+         pos<=posLoopLast(info) ? ((info&POS_LOOP_ON)?2:1) : 0;
+}
+static void clearPosLoop(void){
+  atomic_store_explicit(&positionLoop,0,memory_order_release);
+  posMarking=false;posLoopRefresh();
+}
+static void beginPosMark(void){
+  if(!posEditorActive())return;
+  posMarking=true;posMarkStart=clamp((int)song->currPos,0,127);
+  posLoopRefresh();
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
+}
+static void confirmPosMark(void){
+  if(!posEditorActive() || !posMarking)return;
+  const int here=clamp((int)song->currPos,0,127);
+  const int lo=here<posMarkStart?here:posMarkStart;
+  const int hi=here>posMarkStart?here:posMarkStart;
+  atomic_store_explicit(&positionLoop,lo|(hi<<8)|POS_LOOP_VALID|POS_LOOP_ON,memory_order_release);
+  posMarking=false;posLoopRefresh();
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
+}
+static void togglePosLoop(void){
+  if(!posEditorActive())return;
+  const int state=atomic_load_explicit(&positionLoop,memory_order_acquire);
+  if(!(state&POS_LOOP_VALID))return;
+  atomic_store_explicit(&positionLoop,state^POS_LOOP_ON,memory_order_release);
+  posLoopRefresh();
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 POS_LOOP %s\n",(state&POS_LOOP_ON)?"OFF":"ON");fflush(inputLog);}
+}
+/* Change the DISPLAYED song position without calling modSetPos(), which
+   also changes modPos and could cause an audible jump during playback. */
+static void browsePos(int direction){
+  if(!posEditorActive())return;
+  const int length=clamp((int)song->header.songLength,1,128);
+  const int old=clamp((int)song->currPos,0,length-1);
+  const int now=clamp(old+direction,0,length-1);
+  if(now==old)return;
+  song->currPos=(uint16_t)now;
+  const int pat=clamp((int)song->header.patternTable[now],0,MAX_PATTERNS-1);
+  song->currPattern=(uint16_t)pat;
+  editor.currPatternDisp=&song->header.patternTable[now];
+  editor.currPosEdPattDisp=&song->header.patternTable[now];
+  ui.updateSongPos=true;
+  ui.updateSongPattern=true;
+  ui.updateCurrPattText=true;
+  ui.updatePatternData=true;
+  posLoopRefresh();
+}
+
 static bool selectionAllowed(void){
   return song && !ui.askBoxShown && !ui.editTextFlag &&
          !ui.diskOpScreenShown && !ui.samplerScreenShown &&
@@ -487,7 +578,7 @@ static void stashClip(int kind){
   memcpy(clip.cells,source,sizeof(clip.cells));
   endPatternWrite(locked);
   cancelSelection();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
     clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
 }
 static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
@@ -532,7 +623,7 @@ static void pasteClip(void){
   }
   endPatternWrite(locked);
   changed();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 PASTE kind=%d to patt=%d row=%d col=%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 PASTE kind=%d to patt=%d row=%d col=%d\n",
    clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
@@ -574,7 +665,12 @@ static void startPlayback(int mode){
        PT2 resolves the matching pattern from song->header.patternTable[pos].
        Row 00, then subsequent order positions proceed as usual. */
     editor.playMode=PLAY_MODE_NORMAL;
-    modPlay(DONT_SET_PATTERN,(int16_t)song->currPos,0);
+    const int info=atomic_load_explicit(&positionLoop,memory_order_acquire);
+    int startPos=(int)song->currPos;
+    if((info&(POS_LOOP_ON|POS_LOOP_VALID))==(POS_LOOP_ON|POS_LOOP_VALID) &&
+       posLoopLast(info)<song->header.songLength)
+      startPos=posLoopFirst(info);
+    modPlay(DONT_SET_PATTERN,(int16_t)startPos,0);
   }else{
     editor.playMode=PLAY_MODE_PATTERN;
     const int8_t row=mode==PPT_PLAY_PATTERN_ROW?(int8_t)song->currRow:0;
@@ -652,6 +748,20 @@ static void buttonEvent(int b,bool down){
           startWithMenu=held[PPT_BTN_MENU];}
     return;
   }
+  /* POSITION editor has its own rectangular SONG order selection.
+     SELECT+B begins, and the next B confirms even if SELECT was released. */
+  if(posEditorActive()){
+    if(b==PPT_BTN_B){
+      if(posMarking)confirmPosMark();
+      else if(held[PPT_BTN_SELECT])beginPosMark();
+      return;
+    }
+    if(b==PPT_BTN_Y && held[PPT_BTN_SELECT]){togglePosLoop();return;}
+    /* Prevent channel/pattern copy chords from escaping POSITION editor. */
+    if((b==PPT_BTN_L1 || b==PPT_BTN_R1) && held[PPT_BTN_SELECT]){
+      shoulderUsed[b==PPT_BTN_R1]=true;return;
+    }
+  }
   /* Shortcut SELECT+B+L1/R1: native-style CHANNEL/PATTERN copy.
      This must win over pattern switching and over R1+D-pad mouse mode. */
   if((b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
@@ -711,7 +821,8 @@ static void releaseButton(int b){
                           startWithShift?PPT_PLAY_PATTERN_ROW:PPT_PLAY_PATTERN;
   const bool doPattern=(b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
       !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
-      !held[PPT_BTN_MENU] && !held[PPT_BTN_SELECT] && !selecting && !ui.askBoxShown;
+      !held[PPT_BTN_MENU] && !held[PPT_BTN_SELECT] && !selecting &&
+      !ui.posEdScreenShown && !ui.askBoxShown;
   held[b]=false;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;if(doLive)toggleLiveEdit();}
   if(b==PPT_BTN_START){startPending=false;startWithShift=false;
@@ -737,6 +848,13 @@ static void directionAction(int d){
     return;
   }
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
+  if(posEditorActive()){
+    /* UP/DOWN browse the actual SONG positions, never alter pattern numbers
+       in the order table. LEFT/RIGHT are reserved in POS editor. */
+    if(d==0)browsePos(-1);
+    else if(d==1)browsePos(+1);
+    return;
+  }
   if(selecting){
     /* Selection uses independent navigation; a held R1 is reserved for the
        SELECT+B+R1 whole-pattern chord, never virtual-mouse movement here. */
@@ -780,11 +898,14 @@ static void processHatAxis(unsigned code,int value){
   }
 }
 void ppt_input_init(void){
+  posLoopOwner=song;
+  clearPosLoop();
+  atomic_store(&posBrowseActive,false);
   memset(held,0,sizeof(held));memset(dir,0,sizeof(dir));
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.7 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.8 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -816,6 +937,12 @@ void ppt_input_close(void){
 }
 void ppt_input_update(void){
   if(!active)return;
+  if(song!=posLoopOwner){
+    posLoopOwner=song;
+    clearPosLoop(); /* never carry a song range into another loaded MOD */
+  }
+  atomic_store_explicit(&posBrowseActive,(bool)(song && ui.posEdScreenShown && editor.songPlaying),memory_order_release);
+  if(!ui.posEdScreenShown && posMarking){posMarking=false;posLoopRefresh();}
   if(!editor.songPlaying && ppt_live_edit_active()){
     atomic_store(&liveEditEnabled,false);logLiveEdit("AUTO_OFF");}
   struct input_event ev;
@@ -836,7 +963,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.7 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.8 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -847,7 +974,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.7 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.8 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

@@ -86,7 +86,7 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.7: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
+# PPT v0.3.8: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
 # into the on-screen editor at each tick. Prevent that only during LIVE EDIT.
 # The Paula transport continues on song->row/modPattern/modPos independently.
 replayer=root/'src'/'pt2_replayer.c'
@@ -101,7 +101,7 @@ if 'ppt_live_edit_active()' not in rs:
     sync=('\t/* PPT LIVE EDIT: snapshot REAL playback position independently of\n'
           '\t   displayed currRow/currPattern; keep audio transport untouched. */\n'
           '\tppt_set_playhead(modPattern, song->row);\n'
-          '\tif (ppt_live_edit_active())\n'
+          '\tif (ppt_live_edit_active() || ppt_position_browse_active())\n'
           '\t{\n'
           '\t\tui.updatePatternData = true; /* animate ghost each music row */\n'
           '\t\treturn;\n'
@@ -112,7 +112,7 @@ else:
     print('PT2 frozen editor/playhead already patched')
 
 
-# PPT v0.3.7: gray ghost bar is part of the original PATTERN glyph renderer.
+# PPT v0.3.8: gray ghost bar is part of the original PATTERN glyph renderer.
 # The playback row is visible only when it belongs to the CURRENTLY EDITED
 # pattern, and is inside the fixed 15-row viewport. Draw behind notes so no
 # alpha-overlay can wash out the ProTracker font.
@@ -176,7 +176,7 @@ else:
     print('PT2 ghost pattern-view already patched')
 
 
-# PPT v0.3.7: highlight individual NOTE, sample nibble, FX command, and
+# PPT v0.3.8: highlight individual NOTE, sample nibble, FX command, and
 # parameter nibble fields during SELECT+B rectangular selection. Use the
 # same native PT2 background-aware glyph functions, NOT translucent overlay
 # above the text. That keeps digits readable and leaves gray playback ghost
@@ -189,7 +189,7 @@ if 'pptSelectionBg(' not in ps:
     if ps.count(needle)!=4:
         raise AssertionError(f'PT2 pattern-view channel loops changed: found {ps.count(needle)}, expected 4')
     helper="""
-/* PPT v0.3.7 selection tint behind individual native glyphs. */
+/* PPT v0.3.8 selection tint behind individual native glyphs. */
 static uint32_t pptSelectionBg(int row, int chan, int field, uint32_t original)
 {
     return ppt_selection_contains(song->currPattern, row, chan, field) ? 0xFF858585u : original;
@@ -265,7 +265,54 @@ static uint32_t pptSelectionFg(int row, int chan, int field, uint32_t original)
 else:
     print('PT2 field-accurate rectangular selection already patched')
 
-# PPT v0.3.7: leave PT2's original renderer alone. The user prefers the
+# PPT v0.3.8: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.7 original PT2 fullscreen renderer retained')
+
+# PPT v0.3.8: constrain the next SONG position inside the marked range,
+# after original Bxx/Dxx and song end handling. Keep full PT2 pattern mode.
+rs=replayer.read_text()
+if 'ppt_loop_redirect(modPos' not in rs:
+    # Place redirect BEFORE the native end-of-song stop check. Otherwise
+    # config.compoMode could stop playback before our loop gets to wrap.
+    anchor='\t\tmodPos = (modPos + 1) & 127;\n\t\tif (modPos >= song->header.songLength)'
+    assert rs.count(anchor)==1, 'PT2 nextPosition increment anchor changed'
+    addition=(
+      '\t\tmodPos = (modPos + 1) & 127;\n'
+      '\t\t/* PPT LOOP: route before the native song-end stop logic. */\n'
+      '\t\tconst int pptNextPos = ppt_loop_redirect(modPos, song->header.songLength);\n'
+      '\t\tif (pptNextPos != modPos)\n'
+      '\t\t{\n'
+      '\t\t\tmodPos = pptNextPos;\n'
+      '\t\t\tsong->row = 0;\n'
+      '\t\t}\n'
+      '\t\tif (modPos >= song->header.songLength)'
+    )
+    rs=rs.replace(anchor,addition,1)
+    replayer.write_text(rs)
+else:
+    print('PT2 POSITION LOOP already patched')
+
+# Highlight selection within PT2's existing upper-right POS editor. Draw
+# beneath the text, and keep the program's original fullscreen rendering.
+posed=root/'src'/'pt2_posed.c'
+assert posed.exists(), 'Missing upstream PT2 POS editor'
+ps=posed.read_text()
+if 'ppt_loop_entry_style(entry)' not in ps:
+    inc='#include "pt2_posed.h"'
+    assert ps.count(inc)==1, 'PT2 POS editor include changed'
+    ps=ps.replace(inc,inc+'\n#include "ppt_input.h"',1)
+    anchor='\t\tprintThreeDecimals(128, yPos, entry, textColor);'
+    assert ps.count(anchor)==1, 'PT2 POS renderer entry anchor changed'
+    tint=(
+      '\t\tconst int loopStyle = ppt_loop_entry_style(entry);\n'
+      '\t\tif (loopStyle)\n'
+      '\t\t\tfillRect(128, yPos, (22*FONT_CHAR_W)-1, FONT_CHAR_H,\n'
+      '\t\t\t         loopStyle == 2 ? 0xFF686868u : 0xFF555555u);\n'
+    )
+    ps=ps.replace(anchor,tint+anchor,1)
+    posed.write_text(ps)
+else:
+    print('PT2 POSITION LOOP highlight already patched')
+
+print('PPT v0.3.8 original PT2 fullscreen renderer retained')

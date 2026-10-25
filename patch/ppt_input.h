@@ -16,3 +16,8 @@ int ppt_ghost_row(int displayPattern);
 
 /* True only while SELECT+B rectangular selection is displayed. */
 bool ppt_selection_contains(int pattern, int row, int channel, int field);
+
+/* POSITION SELECT: separate editor selection and SONG-order playback loop. */
+bool ppt_position_browse_active(void);
+int ppt_loop_redirect(int proposed, int length);
+int ppt_loop_entry_style(int entry);
