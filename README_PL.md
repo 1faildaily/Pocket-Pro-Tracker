@@ -1,26 +1,28 @@
-# Pocket Pro Tracker v0.2.5 – pixel-perfect, odsłuch nut, L1+MENU
+# Pocket Pro Tracker v0.2.6 – dopasowanie do wysokości i diagnostyka MENU
 
-To **SourceKit** do GitHub Desktop i GitHub Actions, nie gotowa paczka na konsolę. Bazuje na Twojej działającej integracji PT2 Clone 1.92.
+To **SourceKit** do GitHub Desktop i Actions, a nie gotowy ZIP do PortMastera. Bazuje na działającym PPT v0.2.5 i PT2 Clone 1.92.
 
 ## Zmiany
 
-1. **Obraz:** poprawiono wymuszające zniekształcenie `FULLSCREENSTRETCH=TRUE` na `FALSE`, dodano `INTEGERSCALING=TRUE`, `PIXELFILTER=NEAREST` i `VIDEOSCALE=1X`. Oryginalny raster PT2 Clone ma 320×255. Przy ekranie 640×480 jedyna pełna skala całkowita to 1×, co może dać **duże czarne marginesy**. 2× (640×510) nie mieści całego UI. Ustawienie to traktuj jako test rzeczywistej ostrości, a nie kompromis wielkości. Zastosowanie INTEGERSCALING wymaga sprawdzenia w pełnoekranowym trybie SDL na RG35XX Pro. Jeśli ekran będzie za mały, można wrócić do poprzedniego trybu skalowania bez utraty innych zmian.
-2. **Odsłuch:** wstawienie nuty przyciskiem A w polu NOTE wywołuje autentyczną ścieżkę audio `jamAndPlaceSample()` z PT2 Clone, korzystając z tej samej próbki i wysokości. Odsłuch nie przesuwa ROW, nie wpisuje nuty drugi raz i nie odtwarza niezdefiniowanego sampla. Podczas trwającego PLAY nie uruchamia dodatkowej nuty, żeby nie zakłócać utworu.
-3. **L1 + M/MENU:** wywołuje oryginalną funkcję ESC/PT2 `REALLY QUIT?`. Kod fizycznego przycisku M przyjmujemy testowo jako `354`; nie ma go w `controls.json`, więc nie jest jeszcze potwierdzony na tej konsoli. muOS może przechwytywać go systemowo. **L1 + START zachowano awaryjnie** jako drogę wyjścia z potwierdzeniem na wypadek, gdyby M był niewidoczny.
-4. Pozostają START jako PLAY PATTERN/STOP, SELECT+START SONG od ROW, D-pad LSDJ, mysz pod lewym analogiem 70% wcześniejszej szybkości, tryb modalny A/B i obecne mapowanie przycisków.
+- **Duży ekran bez deformacji:** PT2 ma 320×255, a ekran RG35XX Pro 640×480. W pełnym ekranie obraz ma zostać wyświetlony w **602×480**, na środku, z **czarnymi pasami po około 19 px** z obu stron. `PIXELFILTER=NEAREST` zachowuje ostre krawędzie. Wymagana skala 1,882× nie jest skalą całkowitą. W kodzie PT2 zmieniamy `updateRenderSizeVars()`, ponieważ sam parametr `INTEGERSCALING=FALSE` nie wystarcza; upscaling był wymuszany na liczbach całkowitych. Współrzędne myszy nadal są przeliczane z `video.renderW/renderH/renderX/renderY`.
+- **L1 + MENU/M:** Adapter rozpoznaje dodatkowo evdev `KEY_MENU` (139), `BTN_MODE` (316) i dotychczasowe 354. Kombinacja emituje natywny ESC w PT2, z potwierdzeniem zamknięcia. **Uwaga:** fizycznego M nie było w wcześniejszej kalibracji `controls.json`; muOS może całkowicie przechwycić ten przycisk. Żaden patch aplikacji nie naprawi brakującego zdarzenia wejścia; w tej wersji zapisujemy niesklasyfikowane kody `OTHER-KEY` w `ppt_input.log`, by to sprawdzić.
+- **L1 + START:** zachowany jako działający, awaryjny ESC z potwierdzeniem, dopóki nie potwierdzimy MENU na konsoli.
+- **Nie zmieniamy** odsłuchu nut przy A, lewego analoga, D-pada, PLAY/STOP przez START, SELECT + START = SONG od bieżącego ROW oraz reszty edycji.
 
-## Instalacja przez GitHub Desktop
+## Instalacja GitHub Desktop
 
-1. Rozpakuj ZIP i skopiuj **zawartość** (`.github`, `patch`, `port`, `tests`, `README_PL.md`) do katalogu swojego repozytorium `Pocket-Pro-Tracker`, zastępując stare pliki.
-2. GitHub Desktop → Summary: `PPT v0.2.5 - Pixel perfect, note preview and MENU exit`.
-3. Commit to main → Push origin.
-4. GitHub → Actions → po udanej kompilacji pobierz Artifact, rozpakuj zewnętrzne archiwum i wgraj wewnętrzny `pocket_pro_tracker_pt2.zip` do używanego katalogu `autoinstall` PortMastera.
+1. Rozpakuj SourceKit, skopiuj jego zawartość (`.github`, `patch`, `port`, `tests`, `README_PL.md`) do katalogu repozytorium przez `Repository → Show in Explorer`.
+2. W **Summary** wpisz `PPT v0.2.6 - Fit to height and MENU diagnostics`.
+3. `Commit to main` → `Push origin`.
+4. Po zielonej kompilacji pobierz artefakt, rozpakuj zewnętrzne archiwum i wgraj **wewnętrzny** `pocket_pro_tracker_pt2.zip` do PortMaster `autoinstall`.
 
 ## Test na konsoli
 
-- Porównaj czcionki, przyciski, pionowe linie i krawędzie interfejsu. Sprawdź, czy cały UI jest widoczny; spodziewaj się **czarnych pasów** zamiast rozciągania.
-- Załaduj MOD z prawdziwymi samplami. Ustaw kursor na NOTE; wstaw nutę A i sprawdź odsłuch tej samej próbki i wysokości. Samplowi o zerowej długości nie będzie towarzyszył dźwięk.
-- Wciśnij **L1 + M**, najlepiej najpierw L1, potem M. Jeśli system przejmie M, użyj L1 + START jako bezpiecznej alternatywy.
-- Sprawdź START/STOP, SELECT+START i okna potwierdzenia.
+- Sprawdź, czy obraz ma pełną wysokość 480 px i boczne czarne paski, a górna i dolna krawędź nie są obcięte.
+- Sprawdź kursorem myszy lewy oraz prawy skraj graficznego interfejsu i kliknięcie w oba końce przycisków.
+- Przytrzymaj L1 i naciśnij M. Jeśli nie otwiera się `REALLY QUIT?`, prześlij nowy `ports/pocket_pro_tracker_pt2/ppt_input.log` (zwłaszcza `OTHER-KEY` i linie BUTTON po wciśnięciu M).
+- L1 + START powinno nadal wywołać oryginalny ESC (bez natychmiastowego zamknięcia programu).
 
-Testy automatyczne i kompilacja w lokalnym środowisku obejmują kod adaptera i testy mock, **nie pełną binarkę ARM64**. Pierwszą pełną kompilację PT2 i próbę na muOS wykonasz przez GitHub Actions i konsolę. W razie nieudanego builda przekaż log Actions.
+## Status
+
+Zostały sprawdzone składnia C, mock testy i poprawność patchowania kodu. **Pełna kompilacja PT2 ARM64 przez GitHub Actions i test na konsoli nadal są potrzebne.**

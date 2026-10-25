@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.5 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.6 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -58,15 +58,20 @@ static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
 static int mouseFracX, mouseFracY;
 static FILE *inputLog;
-static int logDirections, logAxes, logButtons;
+static int logDirections, logAxes, logButtons, logUnmapped;
 static int analogByDevice[DEVICES][TRACKED_AXES];
+/* The MENU/M button may use a non-standard evdev code on muOS.
+   If the firmware consumes the key before evdev we cannot receive it. */
+static bool menuRawCode(unsigned code){
+  return code==354 || code==KEY_MENU || code==BTN_MODE;
+}
 static void diagnostic(const char *kind,int code,int value){
   if(!inputLog)return;
   int *counter=&logButtons;
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.5 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.2.6 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -373,7 +378,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.5 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.2.6 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -414,6 +419,7 @@ void ppt_input_update(void){
         bool down=ev.value!=0;
         int b=-1;
         for(int j=0;j<C_COUNT;j++)if((int)ev.code==rawMap[j]){b=j;break;}
+        if(b<0 && menuRawCode(ev.code))b=PPT_BTN_MENU;
         if(b>=0){diagnostic("BUTTON",(int)ev.code,ev.value);if(down)buttonEvent(b,true);else releaseButton(b);continue;}
         int d=-1;
         if(ev.code==KEY_UP || ev.code==BTN_DPAD_UP)d=0;
@@ -421,6 +427,11 @@ void ppt_input_update(void){
         else if(ev.code==KEY_LEFT || ev.code==BTN_DPAD_LEFT)d=2;
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
+        else if(inputLog && logUnmapped++<60){
+          fprintf(inputLog,"PPT 0.2.6 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+                  i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
+          fflush(inputLog);
+        }
       } else if(ev.type==EV_ABS){
         if(ev.code==ABS_HAT0X || ev.code==ABS_HAT0Y)processHatAxis(ev.code,(int)ev.value);
         else {
@@ -428,7 +439,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.2.5 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.2.6 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

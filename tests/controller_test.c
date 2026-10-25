@@ -62,6 +62,8 @@ int main(void){
   assert(rawMap[PPT_BTN_R2]==315);
   assert(rawMap[PPT_BTN_A]==304 && rawMap[PPT_BTN_B]==305 && rawMap[PPT_BTN_X]==307 && rawMap[PPT_BTN_Y]==306);
   assert(rawMap[PPT_BTN_MENU]==354);
+  assert(menuRawCode(354) && menuRawCode(KEY_MENU) && menuRawCode(BTN_MODE));
+  assert(!menuRawCode(304));
   /* Actual evdev on muOS can expose the D-pad as ABS_HAT0Y. */
   state.currRow=7;
   processHatAxis(ABS_HAT0Y,1);
@@ -175,6 +177,6 @@ int main(void){
   releaseButton(PPT_BTN_B);
   assert(patt[beforeRow*4].period==beforeNote);
   ui.askBoxShown=false;
-  puts("PPT v0.2.5: native audition, MENU exit, pixel-perfect config, left analog -30%, START toggle, SHIFT+START song row, L1+START ESC, modal tests passed");
+  puts("PPT v0.2.6: native audition, MENU exit, pixel-perfect config, left analog -30%, START toggle, SHIFT+START song row, L1+START ESC, modal tests passed");
   return 0;
 }

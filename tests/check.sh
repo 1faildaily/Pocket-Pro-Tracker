@@ -55,6 +55,12 @@ void handleEditKeys(SDL_Scancode scancode, bool normalMode)
     jamAndPlaceSample(scancode, normalMode);
 }
 """)
+    (base/'src'/'pt2_visuals.c').write_text("""void updateRenderSizeVars(void) {
+\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);
+\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;
+\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;
+}
+""")
     for _ in range(2): # idempotency after a second run
         subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(base)],check=True)
     ms=main.read_text();asrc=ask.read_text();editSrc=edit.read_text()
@@ -65,17 +71,29 @@ void handleEditKeys(SDL_Scancode scancode, bool normalMode)
     assert editSrc.count('pptPreviewInsertedNote')==1
     assert 'jamAndPlaceSample(SDL_SCANCODE_UNKNOWN, false, pitch, true)' in editSrc
     assert editSrc.count('jamAndPlaceSample(scancode, normalMode, -1, false);')==2
+    visualsSrc=(base/'src'/'pt2_visuals.c').read_text()
+    assert visualsSrc.count('PPT v0.2.6: fullscreen aspect-fit')==1
+    assert 'config.integerScaling' in visualsSrc
+    assert 'video.renderW = (int32_t)((int64_t)video.windowH * SCREEN_W / SCREEN_H);' in visualsSrc
     print('PT2 main/askBox patch anchors and idempotency OK')
 PY
 
 python3 - <<'PY'
 from pathlib import Path
 w=Path('.github/workflows/build-ppt-arm64.yml').read_text()
-for x in ['VIDEOSCALE=1X','FULLSCREEN=TRUE','FULLSCREENSTRETCH=FALSE','INTEGERSCALING=TRUE','PIXELFILTER=NEAREST']:
+for x in ['VIDEOSCALE=1X','FULLSCREEN=TRUE','FULLSCREENSTRETCH=FALSE','INTEGERSCALING=FALSE','PIXELFILTER=NEAREST']:
     assert x in w, x
 assert 'FULLSCREENSTRETCH=TRUE' not in w
 p=Path('patch/apply_patch.py').read_text()
 assert 'pptPreviewInsertedNote' in p
 assert 'jamAndPlaceSample' in p
-print('Pixel-perfect config and native note audition integration checked')
+print('Aspect-fit config and native note audition integration checked')
 PY
+
+python3 - <<'PYTEST026'
+w,h=640,480
+rw=(h*320)//255
+assert rw==602
+assert (w-rw)//2==19
+print('RG35XX Pro: image 602x480, 19px black sidebars confirmed mathematically')
+PYTEST026

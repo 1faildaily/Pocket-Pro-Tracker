@@ -84,3 +84,47 @@ void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex)
     edit.write_text(es)
 else:
     print('PT2 native sample audition already patched')
+
+
+# PPT v0.2.6: Upstream PT2 1.92 hard-codes integer fullscreen scaling in
+# updateRenderSizeVars(), even when INTEGERSCALING=FALSE is configured.
+# Replace the destination rectangle algorithm, preserving the original SDL
+# renderer, source texture, drawing methods, and mouse coordinate handling.
+visuals=root/'src'/'pt2_visuals.c'
+assert visuals.exists(), f'Missing PT2 video source: {visuals}'
+vs=visuals.read_text()
+marker='/* PPT v0.2.6: fullscreen aspect-fit on 640x480. */'
+if marker not in vs:
+    anchor=(
+        '\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);\n'
+        '\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;\n'
+        '\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;'
+    )
+    replacement=(
+        '\t\t\t'+marker+'\n'
+        '\t\t\tif (config.integerScaling)\n'
+        '\t\t\t{\n'
+        '\t\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);\n'
+        '\t\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;\n'
+        '\t\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;\n'
+        '\t\t\t}\n'
+        '\t\t\telse\n'
+        '\t\t\t{\n'
+        '\t\t\t\t/* Fit 320x255 onto 640x480 as 602x480, with 19px sidebars. */\n'
+        '\t\t\t\tif ((int64_t)video.windowW * SCREEN_H >= (int64_t)video.windowH * SCREEN_W)\n'
+        '\t\t\t\t{\n'
+        '\t\t\t\t\tvideo.renderH = video.windowH;\n'
+        '\t\t\t\t\tvideo.renderW = (int32_t)((int64_t)video.windowH * SCREEN_W / SCREEN_H);\n'
+        '\t\t\t\t}\n'
+        '\t\t\t\telse\n'
+        '\t\t\t\t{\n'
+        '\t\t\t\t\tvideo.renderW = video.windowW;\n'
+        '\t\t\t\t\tvideo.renderH = (int32_t)((int64_t)video.windowW * SCREEN_H / SCREEN_W);\n'
+        '\t\t\t\t}\n'
+        '\t\t\t}'
+    )
+    assert vs.count(anchor)==1, f'PT2 1.92 fullscreen scaling anchor changed: {vs.count(anchor)}'
+    vs=vs.replace(anchor,replacement,1)
+    visuals.write_text(vs)
+else:
+    print('PT2 aspect-fit patch already applied')
