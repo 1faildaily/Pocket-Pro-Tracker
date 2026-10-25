@@ -24,3 +24,12 @@ unsigned int SDL_GetTicks(void);
 int SDL_PushEvent(SDL_Event*);
 unsigned int SDL_GetMouseState(int*,int*);
 void SDL_WarpMouseInWindow(SDL_Window*,int,int);
+
+#define DONT_SET_ORDER (-1)
+#define DONT_SET_PATTERN (-1)
+#define DONT_SET_ROW (-1)
+#define PLAY_MODE_NORMAL 0
+#define PLAY_MODE_PATTERN 1
+#define MODE_PLAY 1
+#define POINTER_MODE_PLAY 2
+#define DO_CARRY 1

@@ -1,4 +1,4 @@
-# Pocket Pro Tracker PT2 v0.2 experimental
+# Pocket Pro Tracker PT2 v0.2.3 experimental
 
 A test fork of [ProTracker 2 Clone v1.92](https://github.com/8bitbubsy/pt2-clone) by 8bitbubsy.
 The PT2 GUI, original sample functions, playback and .MOD loader/saver belong to upstream.
@@ -12,8 +12,10 @@ Controls in this alpha:
 - A + direction: edit active NOTE, SAMPLE, FX or PARAM
 - B: copy current field; B then A: cut current field; SELECT + A: paste current field
 - R2: virtual left mouse click; L2: virtual right mouse click
+- START: play current pattern (original PT2 PATTERN action)
+- SELECT (SHIFT) + START: play complete song (original PT2 PLAY action)
 - L1 + START: leave program (without autosaving! save MOD first)
-- Right analog: *experimental* SDL cursor, currently uses ABS_RX/ABS_RY; calibration unverified
+- Right analog: experimental software mouse using ABS_RY (raw 4) for X and ABS_RZ (raw 5) for Y; verify axis 5 on device
 
 **NOT YET IMPLEMENTED:** LSDJ-style multi-row/block selection, full keyboard shortcuts, exact decimal row labels, note names beyond original PT2 C-1..B-3, verified physical joystick axes, full audio/video device testing.
 

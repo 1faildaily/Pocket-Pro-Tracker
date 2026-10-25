@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.2 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.3 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -46,30 +46,32 @@ static uint8_t lastCmd=0, lastParam=0;
    with widely differing physical ranges. Never assume +/-32767. */
 static int clamp(int x,int lo,int hi);
 typedef struct {int min, max, value; bool valid, seen;} axis_t;
-static axis_t axis[4]; /* RX, RY, X, Y */
+/* The muOS device reports left-stick Y as ABS_RX (3) and right-stick X
+   as ABS_RY (4). The adjacent right-stick Y axis is ABS_RZ (5), following
+   the Anbernic layout; its physical behavior still needs console testing.
+   Index by Linux ABS_* axis number (0..5), not the assumed stick name. */
+#define TRACKED_AXES 6
+static axis_t axis[TRACKED_AXES];
 static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
 static FILE *inputLog;
 static int logDirections, logAxes, logButtons;
-static int analogByDevice[DEVICES][4];
+static int analogByDevice[DEVICES][TRACKED_AXES];
 static void diagnostic(const char *kind,int code,int value){
   if(!inputLog)return;
   int *counter=&logButtons;
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.2 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.2.3 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
-  if(code==ABS_RX)return 0;
-  if(code==ABS_RY)return 1;
-  if(code==ABS_X)return 2;
-  if(code==ABS_Y)return 3;
-  return -1;
+  /* ABS_X=0, ABS_Y=1, ABS_Z=2, ABS_RX=3, ABS_RY=4, ABS_RZ=5 */
+  return code < TRACKED_AXES ? (int)code : -1;
 }
 static int axisAmount(int i){
-  if(i<0||i>=4||!axis[i].seen)return 0;
+  if(i<0||i>=TRACKED_AXES||!axis[i].seen)return 0;
   const axis_t *a=&axis[i];
   int lo=a->valid?a->min:-32768, hi=a->valid?a->max:32767;
   if(hi<=lo)return 0;
@@ -95,10 +97,11 @@ static void applyVirtualMouse(void){
   setSpritePos(SPRITE_MOUSE_POINTER,mousePosX,mousePosY);
 }
 static void updateAnalogMouse(void){
-  int x=0,y=0;
-  /* Prefer right stick; use X/Y only if RX/RY never delivered events. */
-  if(axis[0].seen||axis[1].seen){x=axisAmount(0);y=axisAmount(1);}
-  else {x=axisAmount(2);y=axisAmount(3);}
+  /* RG35XX Pro / muOS: 3=left-stick vertical and 4=right-stick horizontal.
+     Old PPT mistakenly combined those two, making the pointer move sideways
+     with left up/down and vertically with right left/right.
+     Right stick X=ABS_RY (4), Y=ABS_RZ (5); do not fall back to left stick. */
+  const int x=axisAmount(ABS_RY), y=axisAmount(ABS_RZ);
   int dx=0,dy=0;
   if(abs(x)>MOUSE_DEADZONE)dx=(x<0?-1:1)*(1+abs(x)/9000);
   if(abs(y)>MOUSE_DEADZONE)dy=(y<0?-1:1)*(1+abs(y)/9000);
@@ -213,6 +216,22 @@ static void pasteField(void){
   else n->param=clipboard.param;
   changed();
 }
+/* START plays the pattern, while physical SELECT (our SHIFT) + START
+   plays the whole song. Calls intentionally match original GUI buttons
+   PTB_PATTERN and PTB_PLAY in pt2_mouse.c (PT2 clone v1.92). */
+static void startPlayback(bool wholeSong){
+  if(!song || ui.askBoxShown || ui.editTextFlag)return;
+  if(wholeSong){
+    editor.playMode=PLAY_MODE_NORMAL;
+    modPlay(DONT_SET_PATTERN,song->currPos,DONT_SET_ROW);
+  }else{
+    editor.playMode=PLAY_MODE_PATTERN;
+    modPlay(song->currPattern,DONT_SET_ORDER,DONT_SET_ROW);
+  }
+  editor.currMode=MODE_PLAY;
+  pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
+  statusAllRight();
+}
 /* PT2 has an independent SDL loop for its modal confirmation dialogs.
    Push standard key events so every askBox can be operated even without a mouse.
    A = ENTER (default option), B = ESCAPE (cancel), specifically while a dialog
@@ -232,6 +251,13 @@ static void buttonEvent(int b,bool down){
   if(ui.askBoxShown){
     if(b==PPT_BTN_A){modalKey(SDLK_RETURN);return;}
     if(b==PPT_BTN_B){modalKey(SDLK_ESCAPE);return;}
+    /* Do not accidentally start playback through a confirmation dialog. */
+    if(b!=PPT_BTN_R2 && b!=PPT_BTN_L2)return;
+  }
+  if(b==PPT_BTN_START){
+    if(held[PPT_BTN_L1])editor.programRunning=false; /* existing exit shortcut */
+    else startPlayback(held[PPT_BTN_SELECT]);
+    return;
   }
   if(b==PPT_BTN_A){
     if(held[PPT_BTN_B]){copyField();erase();}
@@ -242,8 +268,6 @@ static void buttonEvent(int b,bool down){
     else if(held[PPT_BTN_A]){copyField();erase();}
     else copyField();
   }else if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
-    editor.programRunning=false;
-  }else if(b==PPT_BTN_START && held[PPT_BTN_L1]){
     editor.programRunning=false;
   }
   /* R2/L2 mouse buttons handled below as SDL events. */
@@ -295,7 +319,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.2 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.2.3 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -308,8 +332,8 @@ void ppt_input_init(void){
       fprintf(inputLog,"open %s OK name=%s\n",path,devName);
       fflush(inputLog);
     }
-    for(int a=0;a<4;a++){
-      static const unsigned ids[]={ABS_RX,ABS_RY,ABS_X,ABS_Y};
+    for(int a=0;a<TRACKED_AXES;a++){
+      static const unsigned ids[]={ABS_X,ABS_Y,ABS_Z,ABS_RX,ABS_RY,ABS_RZ};
       struct input_absinfo info;
       if(ioctl(fds[i],EVIOCGABS(ids[a]),&info)==0 && info.maximum>info.minimum){
         axis[a].min=info.minimum;axis[a].max=info.maximum;
@@ -350,7 +374,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.2.2 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.2.3 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

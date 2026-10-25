@@ -1,65 +1,39 @@
-# Pocket Pro Tracker v0.2.2 (PT2 Clone): poprawka sterowania
+# Pocket Pro Tracker v0.2.3 — poprawka analogów i PLAY
 
-**To paczka ŹRÓDŁOWA do GitHub Desktop i GitHub Actions.** Nie instaluj jej ZIP bezpośrednio przez PortMaster.
+**To pakiet źródłowy dla GitHub Desktop i GitHub Actions, nie ZIP do bezpośredniej instalacji przez PortMaster.**
 
-## Co zostało poprawione
+## Najważniejsze zmiany
 
-- D-pad z evdev `ABS_HAT0X`/`ABS_HAT0Y`, również obsługa `KEY_*` i `BTN_DPAD_*`.
-- Przytrzymanie D-pada: 280 ms opóźnienia, następnie ruch co 85 ms.
-- Prawy analog steruje myszą; zakres osi jest odczytywany z urządzenia zamiast zakładać ±32767.
-- Jeżeli mysz nie zadziała analogiem, trzymaj **R1 + D-pad**, aby ją przesuwać.
-- **R2** = lewy klik myszy, **L2** = prawy klik myszy.
-- Wirtualny kursor myszy aktualizuje bezpośrednio kursor graficzny PT2 (uniezależnienie od wad `SDL_WarpMouseInWindow` w KMSDRM).
-- Zapis diagnostyki `ports/pocket_pro_tracker_pt2/ppt_input.log` (zdarzenia/zakresy osi; maks. 24 na grupę).
-- Zachowane mapowanie fizycznych przycisków z Twojego controls.json i oryginalne GUI PT2 1.92.
-- Zachowane A do wstawiania, B do edycji i A+D-pad do zmiany wartości. Nie ma jeszcze pełnej edycji blokowej LSDJ.
+- **START → PLAY PATTERN** (to samo co przycisk PATTERN w oryginalnym PT2 Clone).
+- **SELECT (SHIFT) + START → PLAY SONG** (to samo co przycisk PLAY w oryginalnym PT2 Clone).
+- Zachowany dotychczasowy skrót **L1 + START → wyjście z programu** (UWAGA: bez automatycznego zapisu MOD).
+- **Prawy analog → ruch myszy X/Y:** na podstawie Twojego logu i układu osi Anbernica używamy `ABS_RY` (kod 4) dla X i `ABS_RZ` (kod 5) dla Y. Nie pobieramy już X z osi `ABS_RX` (kod 3), która u Ciebie pochodziła z pionowego ruchu lewego drążka. **Rzeczywistą oś kod 5 trzeba zweryfikować na konsoli.**
+- Nadal działają oryginalne funkcje PT2, sterowanie D-padem, wprowadzanie A/B, myszy R1+D-pad, R2/L2 i obsługa okien dialogowych z v0.2.2.
+- Zapamiętane kody przycisków z dostarczonego `controls.json` pozostają bez zmian.
 
-## Jak zaktualizować projekt na GitHubie przez Desktop
+## Instalacja przez GitHub Desktop
 
-1. Rozpakuj `PPT_v0.2.2_PT2_InputFix_SourceKit.zip` na PC.
-2. W GitHub Desktop otwórz repozytorium Pocket-Pro-Tracker przez **Repository → Show in Explorer**.
-3. Skopiuj do repozytorium **zawartość** rozpakowanego folderu, zastępując pliki o tych samych nazwach (zwłaszcza `patch/ppt_input.c`, skrypt `.sh`, pliki `tests` i workflow).
-4. W GitHub Desktop: **Commit to main**, następnie **Push origin**.
-5. Wejdź w repozytorium na GitHubie → **Actions**. Po zielonym buildzie pobierz artefakt.
-6. Rozpakuj artefakt, a znajdujący się wewnątrz `pocket_pro_tracker_pt2.zip` umieść w sprawdzonym katalogu `autoinstall` PortMastera.
-7. Przetestuj D-pad, mysz przez analog i **R1+D-pad**, kliknięcia L2/R2.
-8. W razie problemu wyślij `ports/pocket_pro_tracker_pt2/ppt_input.log` oraz `launch.log`.
+1. Rozpakuj `PPT_v0.2.3_PT2_Analog_Play_SourceKit.zip` na komputerze.
+2. W GitHub Desktop wybierz **Repository → Show in Explorer** w repozytorium `Pocket-Pro-Tracker`.
+3. Skopiuj **zawartość paczki** do katalogu repozytorium, zachowując `.github/workflows`, `patch`, `port`, `tests`.
+4. Kliknij **Commit to main → Push origin**.
+5. Po ukończonej na zielono kompilacji w GitHub Actions pobierz **Artifacts**, rozpakuj pobrany ZIP.
+6. Do PortMaster `autoinstall` skopiuj **wewnętrzny** plik `pocket_pro_tracker_pt2.zip`, bez rozpakowywania tego wewnętrznego ZIP-a.
+7. Uruchom PPT. Sprawdź START, SELECT+START i ruch prawego drążka **osobno we wszystkich czterech kierunkach**.
 
-Testy w obecnym środowisku obejmują jedynie kompilację modułu na atrapach PT2, testy jednostkowe i poprawność paczki. Pełną kompilację ARM64 wykonuje GitHub Actions. Nie ma możliwości potwierdzenia rzeczywistego uruchomienia na RG35XX Pro w tym środowisku.
+## Oczekiwane zachowanie i diagnostyka
 
-*Podstawowa aplikacja: 8bitbubsy/pt2-clone v1.92, BSD-3-Clause. Zachowaj plik LICENSE-PT2-clone.*
+| Fizyczne sterowanie | Funkcja |
+|---|---|
+| START | PLAY PATTERN |
+| SELECT + START | PLAY SONG |
+| L1 + START | Zakończenie PPT, bez zapisu |
+| Prawy analog lewo/prawo | Mysz lewo/prawo |
+| Prawy analog góra/dół | Mysz góra/dół (oś 5, do weryfikacji) |
+| R1 + D-pad | Awaryjny ruch myszy |
+| R2 | Lewy klik myszy |
+| L2 | Prawy klik myszy |
 
+Jeśli w pionie prawy analog nadal nie działa, prześlij `ports/pocket_pro_tracker_pt2/ppt_input.log` po poruszeniu **tylko prawym analogiem** we wszystkich kierunkach. Kod zbiera próbki z osi 0..5, w tym ABS_RZ (5), co pozwoli potwierdzić ostateczne przypisanie.
 
-## Dlaczego kursor zamierał przy "ARE YOU SURE?"
-
-PT2 1.92 ma osobną pętlę zdarzeń w `src/pt2_askbox.c` (funkcja `askBox()`).
-Dotychczas `ppt_input_update()` było wywoływane **tylko** z głównej pętli
-`pt2_main.c`. Kiedy otwierał się dialog, pętla główna się zatrzymywała
-na czas dialogu, a więc cały odczyt kontrolera też.
-
-v0.2.2 podłącza ten sam odczyt kontrolera również do pętli dialogu.
-W oknie potwierdzenia:
-
-- **A** = ENTER (domyślna odpowiedź, w oknie `ARE YOU SURE?` to **YES**),
-- **B** = ESCAPE (anulowanie, **NO**),
-- **D-pad** = ruch myszy bez modyfikatora,
-- **R2** = lewy klik, **L2** = prawy klik,
-- sterowanie analogiem jest nadal obsługiwane także w oknie dialogowym.
-
-Nie modyfikowano oryginalnego silnika MOD ani ekranu ProTracker Clone.
-
-### Test na Anbernicu
-
-1. Zapisz wcześniej swoje dane. Otwórz Disk Op i wybierz istniejący MOD;
-   podczas pytania „ARE YOU SURE?” sprawdź D-pad i analog.
-2. Naciśnij **B** w oknie: powinien bezpiecznie anulować otwieranie MOD.
-3. Ponów i świadomie naciśnij **A**: potwierdzi wczytanie i może zastąpić
-   niezapisane dane. Sprawdź również klik myszą (R2).
-4. Jeśli widzisz ruch kursora tylko lewym analogiem w poziomie, a prawym
-   tylko w pionie, przetestuj osobno każdy analog w lewo/prawo/górę/dół.
-   Raport `ppt_input.log` teraz zapisuje **numer urządzenia evdev**, kod osi
-   i wartość (do 32 wpisów na urządzenie), co pozwoli zmapować fizyczne osie
-   bez zgadywania. Dotychczasowe dane nie rozróżniały analogów wiarygodnie.
-
-**To kod źródłowy do GitHub Desktop**, nie binarka do PortMastera. Zbuduj nowy
-ZIP przez istniejący GitHub Actions. Zachowaj starszą działającą paczkę.
+Nie można zagwarantować uruchomienia portu ani dźwięku na RG35XX Pro na podstawie testów lokalnych. Testy `bash tests/check.sh` weryfikują adapter i skrypt nakładający poprawkę, pełną kompilację PT2 ARM64 wykonuje GitHub Actions. Oryginalny PT2 Clone 1.92: 8bitbubsy, BSD-3-Clause.
