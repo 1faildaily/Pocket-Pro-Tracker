@@ -1,4 +1,4 @@
-# Pocket Pro Tracker v0.2.1 (PT2 Clone): poprawka sterowania
+# Pocket Pro Tracker v0.2.2 (PT2 Clone): poprawka sterowania
 
 **To paczka ŹRÓDŁOWA do GitHub Desktop i GitHub Actions.** Nie instaluj jej ZIP bezpośrednio przez PortMaster.
 
@@ -16,7 +16,7 @@
 
 ## Jak zaktualizować projekt na GitHubie przez Desktop
 
-1. Rozpakuj `PPT_v0.2.1_PT2_InputFix_SourceKit.zip` na PC.
+1. Rozpakuj `PPT_v0.2.2_PT2_InputFix_SourceKit.zip` na PC.
 2. W GitHub Desktop otwórz repozytorium Pocket-Pro-Tracker przez **Repository → Show in Explorer**.
 3. Skopiuj do repozytorium **zawartość** rozpakowanego folderu, zastępując pliki o tych samych nazwach (zwłaszcza `patch/ppt_input.c`, skrypt `.sh`, pliki `tests` i workflow).
 4. W GitHub Desktop: **Commit to main**, następnie **Push origin**.
@@ -28,3 +28,38 @@
 Testy w obecnym środowisku obejmują jedynie kompilację modułu na atrapach PT2, testy jednostkowe i poprawność paczki. Pełną kompilację ARM64 wykonuje GitHub Actions. Nie ma możliwości potwierdzenia rzeczywistego uruchomienia na RG35XX Pro w tym środowisku.
 
 *Podstawowa aplikacja: 8bitbubsy/pt2-clone v1.92, BSD-3-Clause. Zachowaj plik LICENSE-PT2-clone.*
+
+
+## Dlaczego kursor zamierał przy "ARE YOU SURE?"
+
+PT2 1.92 ma osobną pętlę zdarzeń w `src/pt2_askbox.c` (funkcja `askBox()`).
+Dotychczas `ppt_input_update()` było wywoływane **tylko** z głównej pętli
+`pt2_main.c`. Kiedy otwierał się dialog, pętla główna się zatrzymywała
+na czas dialogu, a więc cały odczyt kontrolera też.
+
+v0.2.2 podłącza ten sam odczyt kontrolera również do pętli dialogu.
+W oknie potwierdzenia:
+
+- **A** = ENTER (domyślna odpowiedź, w oknie `ARE YOU SURE?` to **YES**),
+- **B** = ESCAPE (anulowanie, **NO**),
+- **D-pad** = ruch myszy bez modyfikatora,
+- **R2** = lewy klik, **L2** = prawy klik,
+- sterowanie analogiem jest nadal obsługiwane także w oknie dialogowym.
+
+Nie modyfikowano oryginalnego silnika MOD ani ekranu ProTracker Clone.
+
+### Test na Anbernicu
+
+1. Zapisz wcześniej swoje dane. Otwórz Disk Op i wybierz istniejący MOD;
+   podczas pytania „ARE YOU SURE?” sprawdź D-pad i analog.
+2. Naciśnij **B** w oknie: powinien bezpiecznie anulować otwieranie MOD.
+3. Ponów i świadomie naciśnij **A**: potwierdzi wczytanie i może zastąpić
+   niezapisane dane. Sprawdź również klik myszą (R2).
+4. Jeśli widzisz ruch kursora tylko lewym analogiem w poziomie, a prawym
+   tylko w pionie, przetestuj osobno każdy analog w lewo/prawo/górę/dół.
+   Raport `ppt_input.log` teraz zapisuje **numer urządzenia evdev**, kod osi
+   i wartość (do 32 wpisów na urządzenie), co pozwoli zmapować fizyczne osie
+   bez zgadywania. Dotychczasowe dane nie rozróżniały analogów wiarygodnie.
+
+**To kod źródłowy do GitHub Desktop**, nie binarka do PortMastera. Zbuduj nowy
+ZIP przez istniejący GitHub Actions. Zachowaj starszą działającą paczkę.

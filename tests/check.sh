@@ -14,3 +14,41 @@ print('Calibration JSON validated')
 PY
 bash -n 'port/Pocket Pro Tracker PT2.sh'
 python3 -m py_compile patch/apply_patch.py
+
+python3 - <<'PY'
+from pathlib import Path
+import tempfile,subprocess
+root=Path.cwd()
+with tempfile.TemporaryDirectory() as d:
+    base=Path(d); (base/'src').mkdir()
+    main=(base/'src'/'pt2_main.c')
+    main.write_text("""#include "pt2_keyboard.h"
+int main() {
+\tSDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+\twhile(1) {
+\t\thandleInput();
+\t}
+\tcleanUp();
+\tSDL_Quit();
+
+\treturn 0;
+}
+""")
+    ask=(base/'src'/'pt2_askbox.c')
+    ask.write_text("""#include "pt2_askbox.h"
+uint32_t askBox(uint32_t t, const char*s) {
+\twhile(1) {
+\t\treadMouseXY();
+\t\twhile(SDL_PollEvent(&event)){}
+\t}
+}
+""")
+    for _ in range(2): # idempotency after a second run
+        subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(base)],check=True)
+    ms=main.read_text();asrc=ask.read_text()
+    assert ms.count('ppt_input_update();')==1
+    assert asrc.count('ppt_input_update();')==1
+    assert asrc.index('readMouseXY();')<asrc.index('ppt_input_update();')<asrc.index('SDL_PollEvent')
+    assert '#include "ppt_input.h"' in asrc
+    print('PT2 main/askBox patch anchors and idempotency OK')
+PY

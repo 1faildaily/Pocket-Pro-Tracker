@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.1 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.2 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -51,13 +51,14 @@ static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
 static FILE *inputLog;
 static int logDirections, logAxes, logButtons;
+static int analogByDevice[DEVICES][4];
 static void diagnostic(const char *kind,int code,int value){
   if(!inputLog)return;
   int *counter=&logButtons;
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.1 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.2.2 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -132,7 +133,7 @@ static void changed(void){
   /* The upstream engine does not require replacing its own UI or rendering. */
 }
 static void navigate(int d){
-  if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag)return;
+  if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
   if(d==0) song->currRow=wrap((int)song->currRow-1,64);
   else if(d==1) song->currRow=wrap((int)song->currRow+1,64);
   else if(d==2) {cursor.pos=wrap((int)cursor.pos-1,24);cursor.channel=cursor.pos/6;}
@@ -212,11 +213,26 @@ static void pasteField(void){
   else n->param=clipboard.param;
   changed();
 }
+/* PT2 has an independent SDL loop for its modal confirmation dialogs.
+   Push standard key events so every askBox can be operated even without a mouse.
+   A = ENTER (default option), B = ESCAPE (cancel), specifically while a dialog
+   is open. Never insert notes or change the song behind the dialog. */
+static void modalKey(SDL_Keycode key){
+  SDL_Event e;memset(&e,0,sizeof(e));
+  e.type=SDL_KEYDOWN;
+  e.key.state=SDL_PRESSED;
+  e.key.keysym.sym=key;
+  SDL_PushEvent(&e);
+}
 static void buttonEvent(int b,bool down){
   if(b<0||b>=C_COUNT)return;
   if(held[b]==down)return;
   held[b]=down;
   if(!down)return;
+  if(ui.askBoxShown){
+    if(b==PPT_BTN_A){modalKey(SDLK_RETURN);return;}
+    if(b==PPT_BTN_B){modalKey(SDLK_ESCAPE);return;}
+  }
   if(b==PPT_BTN_A){
     if(held[PPT_BTN_B]){copyField();erase();}
     else if(held[PPT_BTN_SELECT])pasteField();
@@ -247,8 +263,9 @@ static void releaseButton(int b){
   }
 }
 static void directionAction(int d){
-  /* R1+D-pad doubles as a reliable, no-analog-required mouse control. */
-  if(held[PPT_BTN_R1]){
+  /* During askBox(), the D-pad controls the pointer, not the pattern.
+     The askBox owns a separate event loop but still calls ppt_input_update(). */
+  if(ui.askBoxShown || held[PPT_BTN_R1]){
     int dx=(d==2?-MOUSE_STEP:(d==3?MOUSE_STEP:0));
     int dy=(d==0?-MOUSE_STEP:(d==1?MOUSE_STEP:0));
     moveVirtualMouse(dx,dy);
@@ -278,13 +295,19 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.1 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.2.2 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
     fds[i]=open(path,O_RDONLY|O_NONBLOCK|O_CLOEXEC);
     if(fds[i]<0)continue;
-    if(inputLog){fprintf(inputLog,"open %s OK\n",path);fflush(inputLog);}
+    if(inputLog){
+      char devName[128]={0};
+      if(ioctl(fds[i],EVIOCGNAME(sizeof(devName)),devName)<0)
+        strcpy(devName,"unknown");
+      fprintf(inputLog,"open %s OK name=%s\n",path,devName);
+      fflush(inputLog);
+    }
     for(int a=0;a<4;a++){
       static const unsigned ids[]={ABS_RX,ABS_RY,ABS_X,ABS_Y};
       struct input_absinfo info;
@@ -325,7 +348,11 @@ void ppt_input_update(void){
         else {
           int a=axisIndex(ev.code);
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
-            diagnostic("ANALOG",(int)ev.code,(int)ev.value);}
+            /* Limit axis samples per device so logs remain readable. */
+            if(inputLog && analogByDevice[i][a]++ < 16){
+              fprintf(inputLog,"PPT 0.2.2 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fflush(inputLog);
+            }}
         }
       }
     }

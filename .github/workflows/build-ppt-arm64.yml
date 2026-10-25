@@ -12,6 +12,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build libsdl2-dev zip python3 file
+      - name: Test controller and patch integration
+        run: bash tests/check.sh
       - name: Download upstream ProTracker 2 clone 1.92
         run: |
           git clone --depth 1 --branch v1.92 https://github.com/8bitbubsy/pt2-clone.git upstream
@@ -42,5 +44,5 @@ jobs:
           unzip -t pocket_pro_tracker_pt2.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: PPT_v0.2.1_PT2_PortMaster_ARM64
+          name: PPT_v0.2.2_PT2_PortMaster_ARM64
           path: pocket_pro_tracker_pt2.zip

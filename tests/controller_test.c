@@ -13,7 +13,8 @@ video_t video;
 void updateCursorPos(void){}
 void setSpritePos(int s,int x,int y){(void)s;(void)x;(void)y;}
 unsigned int SDL_GetTicks(void){return 0;}
-int SDL_PushEvent(SDL_Event *event){(void)event;return 1;}
+static SDL_Event lastEvent; static int eventsPushed;
+int SDL_PushEvent(SDL_Event *event){lastEvent=*event;eventsPushed++;return 1;}
 unsigned int SDL_GetMouseState(int*x,int*y){*x=0;*y=0;return 0;}
 void SDL_WarpMouseInWindow(SDL_Window*w,int x,int y){(void)w;(void)x;(void)y;}
 #include "../patch/ppt_input.c"
@@ -73,6 +74,22 @@ int main(void){
   assert(axisAmount(0)>30000);
   axis[0].value=127;
   assert(abs(axisAmount(0))<1000);
-  puts("PPT v0.2.1 input: Dpad HAT, mouse fallback, axes and core tests passed");
+  /* A blocking PT2 askBox must not insert notes or scroll the song. */
+  ui.askBoxShown=true;
+  int beforeRow=state.currRow;
+  uint16_t beforeNote=patt[beforeRow*4].period;
+  int beforeMouseX=mousePosX;
+  directionEvent(3,true);
+  assert(state.currRow==beforeRow && mousePosX>beforeMouseX);
+  directionEvent(3,false);
+  buttonEvent(PPT_BTN_A,true);
+  assert(lastEvent.type==SDL_KEYDOWN && lastEvent.key.keysym.sym==SDLK_RETURN);
+  buttonEvent(PPT_BTN_A,false);
+  buttonEvent(PPT_BTN_B,true);
+  assert(lastEvent.type==SDL_KEYDOWN && lastEvent.key.keysym.sym==SDLK_ESCAPE);
+  buttonEvent(PPT_BTN_B,false);
+  assert(patt[beforeRow*4].period==beforeNote);
+  ui.askBoxShown=false;
+  puts("PPT v0.2.2: modal ENTER/ESC and D-pad pointer, HAT, calibrated buttons tests passed");
   return 0;
 }

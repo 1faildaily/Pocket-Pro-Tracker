@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pocket Pro Tracker PT2 Clone v0.2.1, experimental PortMaster launcher
+# Pocket Pro Tracker PT2 Clone v0.2.2, experimental PortMaster launcher
 # No external evdev mapper: PPT input module uses saved RG35XX Pro raw keycodes.
 set -u
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -37,7 +37,7 @@ export SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0
 export PPT_DIAG_LOG="$GAMEDIR/ppt_input.log"
 chmod +x ./pt2-clone 2>/dev/null || true
 {
- echo "===== PPT PT2 v0.2 $(date) ====="
+ echo "===== PPT PT2 v0.2.2 $(date) ====="
  echo "System: $(uname -m)"
  echo "SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-autodetect} SDL_AUDIODRIVER=$SDL_AUDIODRIVER SDL_RENDER_DRIVER=$SDL_RENDER_DRIVER"
  echo "Binary: $(ls -l ./pt2-clone 2>&1)"
