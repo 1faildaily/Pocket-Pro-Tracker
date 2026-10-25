@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.8 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.0 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -23,6 +23,7 @@
 #include "pt2_structs.h"
 #include "pt2_visuals.h"
 #include "pt2_replayer.h"
+#include "pt2_audio.h"
 #include "pt2_helpers.h"
 #include "ppt_input.h"
 
@@ -46,6 +47,9 @@ static int lastPitch=24; /* C-3, original PT2 uses C-1..B-3 */
 static uint8_t lastCmd=0, lastParam=0;
 /* L1/R1 act on release, so a chord never switches patterns unintentionally. */
 static bool shoulderUsed[2];
+/* SELECT alone switches between PLAY and native RECORD-style live editing.
+   The transport keeps running, and SELECT+START must NOT toggle this mode. */
+static bool liveEditEnabled, selectChordUsed;
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
 static int clamp(int x,int lo,int hi);
@@ -73,7 +77,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.8 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.0 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -134,6 +138,14 @@ static const uint16_t periods[36] = {
 
 static int clamp(int x,int lo,int hi){return x<lo?lo:(x>hi?hi:x);}
 static int wrap(int n,int size){n%=size;return n<0?n+size:n;}
+/* A recorded pattern can be read on the audio thread. Lock while updating
+   note/sample/effect cells to avoid tearing during live playback. */
+static bool beginPatternWrite(void){
+  bool doLock=editor.songPlaying && !audio.locked;
+  if(doLock)lockAudio();
+  return doLock;
+}
+static void endPatternWrite(bool locked){if(locked)unlockAudio();}
 static int pitchOf(uint16_t period){
   if (!period) return lastPitch;
   int best=0,dist=INT_MAX;
@@ -162,21 +174,13 @@ static void navigate(int d){
   updateCursorPos();
 }
 extern void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex);
-/* L1/R1 match PT2's PATTERN number arrows at the current song order.
-   This changes the order-table pattern assignment, but never modifies any
-   pattern note data. Bounds match the original PT2 buttons (00..99). */
+/* Same native callbacks as upstream PT2 ALT+LEFT / ALT+RIGHT.
+   DO NOT rewrite the song order table (older PPT versions did that). */
 static void changePattern(int step){
-  if(!song || editor.songPlaying || ui.askBoxShown || ui.editTextFlag ||
+  if(!song || ui.askBoxShown || ui.editTextFlag ||
      ui.diskOpScreenShown || ui.samplerScreenShown)return;
-  if(song->currPos>=128)return;
-  const int current=song->header.patternTable[song->currPos];
-  const int next=clamp(current+step,0,MAX_PATTERNS-1);
-  if(next==current)return;
-  song->header.patternTable[song->currPos]=(uint16_t)next;
-  setPattern((int16_t)next);
-  ui.updateSongPattern=true;
-  ui.updatePatternData=true;
-  updateWindowTitle(true);
+  if(step<0)decPatt();
+  else incPatt();
 }
 /* Use PT2's own sample change functions, which also update the sample info. */
 static void changeActiveSample(int step){
@@ -192,7 +196,9 @@ static void previewNote(const note_t *n){
 static void edit(int d){
   if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
   note_t *n=currentNote();if(!n)return;
-  const int delta=(d==2)?-1:(d==3)?1:(d==0)?-12:12;
+  /* LSDJ convention: UP means HIGHER, DOWN means LOWER. */
+  const int delta=(d==2)?-1:(d==3)?1:(d==0)?12:-12;
+  const bool locked=beginPatternWrite();
   switch(cursor.pos%6){
     case CURSOR_NOTE: {
       int next=clamp(pitchOf(n->period)+delta,0,35);
@@ -203,7 +209,7 @@ static void edit(int d){
     case CURSOR_SAMPLE1:
     case CURSOR_SAMPLE2: {
       int step=(d<2)?16:1;
-      int sign=(d==0 || d==2)?-1:1;
+      int sign=(d==0 || d==3)?1:-1;
       const int selected=clamp(editor.currSample+1,1,31);
       const int num=clamp((n->sample?n->sample:selected)+sign*step,1,31);
       n->sample=(uint8_t)num;
@@ -211,17 +217,19 @@ static void edit(int d){
       updateCurrSample();
     }break;
     case CURSOR_CMD:
-      lastCmd=(uint8_t)wrap((int)n->command+((d<2)?(d==0?-4:4):(d==2?-1:1)),16);
+      lastCmd=(uint8_t)wrap((int)n->command+((d<2)?(d==0?4:-4):(d==2?-1:1)),16);
       n->command=lastCmd;break;
     case CURSOR_PARAM1:
     case CURSOR_PARAM2:
       lastParam=(uint8_t)wrap((int)n->param+delta,256);
       n->param=lastParam;break;
   }
+  endPatternWrite(locked);
   changed();
 }
 static void insert(void){
   note_t *n=currentNote(); if(!n || ui.editTextFlag || ui.askBoxShown)return;
+  const bool locked=beginPatternWrite();
   switch(cursor.pos%6){
     case CURSOR_NOTE:
       if(!n->period)n->period=periods[lastPitch];
@@ -235,10 +243,12 @@ static void insert(void){
     case CURSOR_PARAM1:
     case CURSOR_PARAM2: n->param=lastParam;break;
   }
+  endPatternWrite(locked);
   changed();
 }
 static void erase(void){
   note_t *n=currentNote();if(!n)return;
+  const bool locked=beginPatternWrite();
   switch(cursor.pos%6){
     case CURSOR_NOTE:n->period=0;break;
     case CURSOR_SAMPLE1:
@@ -247,6 +257,7 @@ static void erase(void){
     case CURSOR_PARAM1:
     case CURSOR_PARAM2:n->param=0;break;
   }
+  endPatternWrite(locked);
   changed();
 }
 /* A minimal per-field clipboard. Rectangular multi-row LSDJ selection is NOT ready yet. */
@@ -260,19 +271,41 @@ static void copyField(void){
 static void pasteField(void){
   note_t *n=currentNote();if(!n || !clipboardSet)return;
   int f=cursor.pos%6;
+  const bool locked=beginPatternWrite();
   if(f==CURSOR_NOTE)n->period=clipboard.period;
   else if(f==CURSOR_SAMPLE1 || f==CURSOR_SAMPLE2)n->sample=clipboard.sample;
   else if(f==CURSOR_CMD)n->command=clipboard.command;
   else n->param=clipboard.param;
+  endPatternWrite(locked);
   changed();
 }
 /* Playback actions use the original PT2 replayer, preserving MOD semantics.
    START = PLAY PATTERN, or STOP if anything is already playing.
    SELECT (physical SHIFT)+START = PLAY SONG from current order AND ROW. */
+/* Experimental non-restarting switch: PT2 already supports editing while
+   songPlaying is true through MODE_RECORD. Track cursor follows the playhead.
+   This avoids changing PT2's replayer clock or triggering another modPlay(). */
+static void toggleLiveEdit(void){
+  if(!song || !editor.songPlaying || ui.askBoxShown || ui.editTextFlag ||
+     ui.diskOpScreenShown || ui.samplerScreenShown)return;
+  liveEditEnabled=!liveEditEnabled;
+  if(liveEditEnabled){
+    editor.currMode=MODE_RECORD;
+    editor.recordMode=RECORD_PATT;
+    pointerSetMode(POINTER_MODE_EDIT,DO_CARRY);
+    displayMsg("PPT LIVE EDIT (PLAYING)");
+  }else{
+    editor.currMode=MODE_PLAY;
+    pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
+    displayMsg("PPT PLAY MODE");
+  }
+  ui.updatePatternData=true;
+}
 static void startPlayback(bool songFromRow){
   if(!song || ui.askBoxShown || ui.editTextFlag)return;
   if(editor.songPlaying){
     modStop();
+    liveEditEnabled=false;
     editor.currMode=MODE_IDLE;
     pointerSetMode(POINTER_MODE_IDLE,DO_CARRY);
     statusAllRight();
@@ -286,6 +319,7 @@ static void startPlayback(bool songFromRow){
     modPlay(song->currPattern,DONT_SET_ORDER,DONT_SET_ROW);
   }
   editor.currMode=MODE_PLAY;
+  liveEditEnabled=false;
   pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
   statusAllRight();
 }
@@ -318,6 +352,8 @@ static void buttonEvent(int b,bool down){
   if(held[b]==down)return;
   held[b]=down;
   if(!down)return;
+  if(b!=PPT_BTN_SELECT && held[PPT_BTN_SELECT])selectChordUsed=true;
+  if(b==PPT_BTN_SELECT){selectChordUsed=false;return;}
   if(ui.askBoxShown){
     if(b==PPT_BTN_A){modalKey(SDLK_RETURN);return;}
     if(b==PPT_BTN_B){modalKey(SDLK_ESCAPE);return;}
@@ -376,6 +412,9 @@ static void buttonEvent(int b,bool down){
 }
 static void releaseButton(int b){
   if(b<0||b>=C_COUNT || !held[b])return;
+  /* SELECT alone toggles live editing, but SELECT+A/B/START never does. */
+  const bool doLive=(b==PPT_BTN_SELECT && !selectChordUsed &&
+      editor.songPlaying && !ui.askBoxShown && !ui.editTextFlag);
   /* Execute START when released so L1+START cannot accidentally PLAY. */
   const bool doStart=(b==PPT_BTN_START && startPending && !exitChordSent && !held[PPT_BTN_L1] && !ui.askBoxShown);
   const bool doSong=startWithShift;
@@ -383,6 +422,7 @@ static void releaseButton(int b){
       !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
       !held[PPT_BTN_MENU] && !ui.askBoxShown;
   held[b]=false;
+  if(b==PPT_BTN_SELECT){selectChordUsed=false;if(doLive)toggleLiveEdit();}
   if(b==PPT_BTN_START){startPending=false;exitChordSent=false;}
   if(b==PPT_BTN_L1 || b==PPT_BTN_MENU)exitChordSent=false;
   if(doStart)startPlayback(doSong);
@@ -398,6 +438,7 @@ static void releaseButton(int b){
   }
 }
 static void directionAction(int d){
+  if(held[PPT_BTN_SELECT])selectChordUsed=true;
   /* During askBox(), the D-pad controls the pointer, not the pattern.
      The askBox owns a separate event loop but still calls ppt_input_update(). */
   if(held[PPT_BTN_R1])shoulderUsed[1]=true;
@@ -431,7 +472,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.8 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.0 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -463,6 +504,7 @@ void ppt_input_close(void){
 }
 void ppt_input_update(void){
   if(!active)return;
+  if(!editor.songPlaying && liveEditEnabled){liveEditEnabled=false;}
   struct input_event ev;
   for(int i=0;i<DEVICES;i++){
     if(fds[i]<0)continue;
@@ -481,7 +523,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.2.8 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.0 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -492,7 +534,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.2.7 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.0 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

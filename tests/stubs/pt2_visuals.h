@@ -5,3 +5,5 @@ void updateCursorPos(void);
 void setSpritePos(int,int,int);
 void statusAllRight(void);
 void updateCurrSample(void);
+
+void displayMsg(const char*);

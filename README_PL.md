@@ -1,19 +1,22 @@
-# Pocket Pro Tracker v0.2.9b – naprawa błędu GitHub Actions
+# Pocket Pro Tracker v0.3.0: FULLSCREEN + LIVE EDIT (eksperymentalny)
 
-Naprawia `AssertionError: PT2 flipFrame presentation anchor changed` w skrypcie `patch/apply_patch.py` z v0.2.9. Przyczyną było porównywanie całego fragmentu oryginalnego PT2 co do znaku (włączając białe znaki/komentarze). Nowy skrypt odnajduje blok między `SDL_UpdateTexture` i `SDL_RenderPresent` wyłącznie wewnątrz `flipFrame`, sprawdza jego strukturę, a następnie go zastępuje. Nie wyłącza kontroli poprawności zmian.
+To **SourceKit**, nie gotowa binarka. Skopiuj zawartość ZIP do repozytorium przez GitHub Desktop, uruchom Actions. Potem pobierz artefakt i zainstaluj wewnętrzny `pocket_pro_tracker_pt2.zip` przez PortMaster.
+
+## Zmiany
+
+- Przywrócono pierwotny **FULLSCREENSTRETCH=TRUE** na Anbernicu. Bez 602x480 ani dodatkowego renderera.
+- **L1/R1** uruchamiają natywne `decPatt()` / `incPatt()` (oryginalne ALT + LEFT/RIGHT PT2). Nie zmieniają tabeli pozycji SONG.
+- **A+UP** podwyższa, **A+DOWN** obniża nuty/wartości; A+LEFT/RIGHT pozostaje -1/+1.
+- **SELECT wciśnięty i puszczony SAM podczas odtwarzania** przełącza PLAY <-> LIVE EDIT. Bazuje na MODE_RECORD PT2, bez restartu dźwięku. Edycje patternu są zabezpieczone blokadą audio.
+- SELECT+START nadal PLAY SONG od wybranego ROW; nie wywołuje LIVE EDIT.
+- START = PLAY PATTERN / STOP, L1+M = ESC, L2/R2 = wybór sampla, X/Y = mysz.
+
+**Ograniczenie LIVE EDIT:** wiersz edycji może podążać za playheadem tak jak w trybie RECORD. Zmiany wejdą przy kolejnym odczycie nuty, nie zmieniają brzmienia aktualnie wybrzmiewających dźwięków. Eksperyment testuj na KOPII pliku MOD.
 
 ## GitHub Desktop
 
-Rozpakuj zawartość tego ZIP-a **do katalogu głównego dotychczasowego repozytorium**, nadpisując wszystkie pliki z paczki. Następnie wpisz w Summary: `PPT v0.2.9b - Fix flipFrame patch matching`; Commit to main → Push origin. Po zielonym GitHub Actions pobierz jego artefakt i rozpakuj wewnętrzny ZIP do PortMaster `autoinstall`.
+1. Wypakuj zawartość SourceKit i skopiuj do repozytorium (nie sam folder).
+2. Summary: `PPT v0.3.0 - Restore fullscreen, native pattern switch and live edit`
+3. Commit to main, potem Push origin. Po zielonej kompilacji wgraj wewnętrzny ZIP przez PortMaster.
 
-## Zakres
-
-To **SourceKit**, a nie program gotowy do uruchomienia. Zachowano v0.2.9 natywną kompozycję obrazu 640×480, aktualne sterowanie i audio. Testy obejmują także warianty oryginalnego bloku renderowania z innym formatowaniem. Ostateczne działanie na fizycznym RG35XX Pro wymaga sprawdzenia.
-
-## Jak sprawdzić
-
-Po uruchomieniu otwórz `ports/pocket_pro_tracker_pt2/ppt_video.log`. Nowa implementacja powinna dopisać linię `PPT VIDEO v0.2.9 COMPOSED frame=640x480 rect=19,0,602,480 logical=0x0 ...`. Jeśli jej nie ma, nowa ścieżka renderowania się nie uruchomiła. Jeśli jest, ale obraz nadal ma czarne pasy u góry/dołu, wyślij także **aktualne zdjęcie ekranu**. Będzie to oznaczało, że ograniczenie znajduje się poza składaniem pikseli w PT2 (np. warstwa KMSDRM/wyświetlacz).
-
-## Status
-
-Przetestowano programowo kompozycję obrazu 640×480, łącznie z pierwszym i ostatnim rzędem pikseli. Przeprowadzono test struktury źródeł i nakładania poprawki na imitację kodu upstream. Pełna kompilacja ARM64 GitHub Actions oraz test fizycznego Anbernica nadal są potrzebne.
+Testy kontrolera i integracji kodu przeprowadzone lokalnie. **Nie testowano jeszcze na fizycznym Anbernicu.**

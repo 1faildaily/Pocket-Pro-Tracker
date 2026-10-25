@@ -32,8 +32,13 @@ void SDL_WarpMouseInWindow(SDL_Window*,int,int);
 #define DONT_SET_ROW (-1)
 #define PLAY_MODE_NORMAL 0
 #define PLAY_MODE_PATTERN 1
-#define MODE_PLAY 1
+#define MODE_PLAY 2
 #define POINTER_MODE_PLAY 2
 #define POINTER_MODE_IDLE 0
 #define MODE_IDLE 0
 #define DO_CARRY 1
+
+#define MODE_EDIT 1
+#define MODE_RECORD 3
+#define POINTER_MODE_EDIT 3
+#define RECORD_PATT 0
