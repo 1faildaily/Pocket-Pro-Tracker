@@ -86,7 +86,7 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.0: leave PT2's original renderer alone. The user prefers the
+# PPT v0.3.1: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.0 original PT2 fullscreen renderer retained')
+print('PPT v0.3.1 original PT2 fullscreen renderer retained')

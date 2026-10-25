@@ -15,7 +15,7 @@ static int playCalls, playPatt, playPos, playRow, stopCalls;
 static int pointerModeCalls, statusCalls;
 static int previewCalls,previewPitch,previewSample;
 static int sampleUIUpdates, patternUIUpdates, titleUpdates;
-void pptPreviewInsertedNote(int8_t pitch,int8_t sampleIndex){previewCalls++;previewPitch=pitch;previewSample=sampleIndex;}
+void pptPreviewInsertedNote(int8_t pitch,int8_t sampleIndex){assert(!audio.locked);previewCalls++;previewPitch=pitch;previewSample=sampleIndex;}
 void modPlay(int16_t patt,int16_t pos,int8_t row){playCalls++;playPatt=patt;playPos=pos;playRow=row;editor.songPlaying=true;}
 void modStop(void){stopCalls++;editor.songPlaying=false;}
 void setPattern(int16_t patt){state.currPattern=(uint16_t)patt;patternUIUpdates++;}
@@ -75,14 +75,41 @@ int main(void){
   editor.currMode=MODE_PLAY;editor.songPlaying=true;
   int started=playCalls, stopped=stopCalls;
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
-  assert(editor.currMode==MODE_RECORD && liveEditEnabled);
+  assert(editor.currMode==MODE_PLAY && liveEditEnabled);
   assert(editor.songPlaying && playCalls==started && stopCalls==stopped);
-  assert(pointerModeLast==POINTER_MODE_EDIT);
+  /* LIVE EDIT keeps the original MODE_PLAY and pointer state intact. */
   /* Editing while playing locks the audio callback for atomic data update. */
   state.currRow=4;cursor.pos=0;
   int beforeLocks=lockCalls;
+  editor.currSample=4;
+  patt[16].period=periods[0];patt[16].sample=2;
   insert();assert(lockCalls>beforeLocks && lockCalls==unlockCalls);
+  assert(patt[16].period==periods[lastPitch] && patt[16].sample==5);
+  /* Native audio preview is attempted only AFTER unlocking the mixer. */
+  assert(previewSample==4);
+  /* Selecting another sample and pressing A overwrites OLD note+sample. */
+  editor.songPlaying=false;liveEditEnabled=false;
+  cursor.pos=0;state.currRow=5; editor.currSample=7;
+  patt[20].period=periods[1];patt[20].sample=3;
+  int previewBefore=previewCalls;
+  insert();
+  assert(patt[20].period==periods[lastPitch] && patt[20].sample==8);
+  assert(previewCalls==previewBefore+1 && previewSample==7 && previewPitch==lastPitch);
+  /* SAMPLE field A must overwrite and audition, not retain previous sample. */
+  editor.currSample=10;cursor.pos=CURSOR_SAMPLE1;
+  insert();assert(patt[20].sample==11);
+  assert(previewSample==10 && previewCalls==previewBefore+2);
+  /* Precision mouse: tiny deflection moves by fractions, not huge steps. */
+  assert(precisionMouseStep(4200)==0);
+  assert(precisionMouseStep(8000)>0);
+  assert(precisionMouseStep(32767)>precisionMouseStep(8000));
+  assert(precisionMouseStep(-8000)==-precisionMouseStep(8000));
+  /* No hidden edits are allowed while playing but LIVE EDIT is off. */
+  editor.songPlaying=true;liveEditEnabled=false;
+  state.currRow=6;cursor.pos=0;patt[24].period=periods[2];patt[24].sample=3;
+  insert();assert(patt[24].period==periods[2] && patt[24].sample==3);
   /* SELECT again returns to PLAY without restarting or stopping. */
+  editor.songPlaying=true;liveEditEnabled=true;cursor.pos=0;
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
   assert(editor.currMode==MODE_PLAY && !liveEditEnabled && editor.songPlaying);
   assert(playCalls==started && stopCalls==stopped);
@@ -108,6 +135,6 @@ int main(void){
   assert(lastEvent.key.keysym.scancode==SDL_SCANCODE_ESCAPE);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_L1);
   assert(state.currPattern==7);
-  puts("PPT v0.3.0: fullscreen legacy, PT2 ALT pattern semantics, direction, live edit, chords OK");
+  puts("PPT v0.3.1: live edit safe, sample overwrite, preview, precise mouse, chords OK");
   return 0;
 }

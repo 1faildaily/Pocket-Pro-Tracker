@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.0 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.1 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -31,9 +31,10 @@
 #define INITIAL_DELAY 280
 #define REPEAT_DELAY 85
 #define MOUSE_STEP 6
-#define MOUSE_DEADZONE 5500
-#define MOUSE_SPEED_NUM 7
-#define MOUSE_SPEED_DEN 10
+#define MOUSE_DEADZONE 4200
+#define MOUSE_SPEED_DEN 1024
+#define MOUSE_FINE_LINEAR 205
+#define MOUSE_FINE_CURVE 2458
 #define SCREEN_MOUSE_W 320
 #define SCREEN_MOUSE_H 255
 #define C_COUNT 11
@@ -50,6 +51,10 @@ static bool shoulderUsed[2];
 /* SELECT alone switches between PLAY and native RECORD-style live editing.
    The transport keeps running, and SELECT+START must NOT toggle this mode. */
 static bool liveEditEnabled, selectChordUsed;
+static FILE *inputLog;
+static void logLiveEdit(const char *event){
+  if (inputLog){fprintf(inputLog,"PPT 0.3.1 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+}
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
 static int clamp(int x,int lo,int hi);
@@ -63,7 +68,6 @@ static axis_t axis[TRACKED_AXES];
 static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
 static int mouseFracX, mouseFracY;
-static FILE *inputLog;
 static int logDirections, logAxes, logButtons, logUnmapped;
 static int analogByDevice[DEVICES][TRACKED_AXES];
 /* The MENU/M button may use a non-standard evdev code on muOS.
@@ -77,7 +81,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.0 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.1 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -110,23 +114,34 @@ static void applyVirtualMouse(void){
   mouse.rawY=mouse.absY=mousePosY;
   setSpritePos(SPRITE_MOUSE_POINTER,mousePosX,mousePosY);
 }
+/* v0.3.1 precision mouse: low-amplitude input moves in sub-pixel steps,
+   high deflection accelerates smoothly; no rounding on each frame. */
+static int precisionMouseStep(int normalized){
+  int mag=abs(normalized);
+  if(mag<=MOUSE_DEADZONE)return 0;
+  const int full=32767-MOUSE_DEADZONE;
+  const int distance=clamp(mag-MOUSE_DEADZONE,0,full);
+  const int64_t linear=(int64_t)distance*MOUSE_FINE_LINEAR/full;
+  const int64_t curve=(int64_t)distance*distance*MOUSE_FINE_CURVE/((int64_t)full*full);
+  int result=(int)(linear+curve);
+  return normalized<0?-result:result;
+}
 static void updateAnalogMouse(void){
-  /* Left stick ONLY. Axis 3 (ABS_RX) was confirmed as left up/down.
-     Axis 2 (ABS_Z) is the expected adjacent horizontal axis; if it is
-     different on this firmware, the new log records axes 0..5 for diagnosis.
-     Fractional accumulation gives a true 30% reduction even at low speeds. */
-  const int x=axisAmount(ABS_Z), y=axisAmount(ABS_RX);
-  const int moveX=abs(x)>MOUSE_DEADZONE ? (x<0?-1:1)*(1+abs(x)/9000) : 0;
-  const int moveY=abs(y)>MOUSE_DEADZONE ? (y<0?-1:1)*(1+abs(y)/9000) : 0;
-  if(!moveX)mouseFracX=0;
-  if(!moveY)mouseFracY=0;
-  mouseFracX+=moveX*MOUSE_SPEED_NUM;
-  mouseFracY+=moveY*MOUSE_SPEED_NUM;
-  int dx=mouseFracX/MOUSE_SPEED_DEN, dy=mouseFracY/MOUSE_SPEED_DEN;
+  /* Left stick confirmed on this unit: ABS_Z=2 horizontal, ABS_RX=3 vertical.
+     Pixel fractions accumulate until a full pixel can be moved; slow nudges
+     therefore work even on a 320x255 virtual screen. */
+  const int x=precisionMouseStep(axisAmount(ABS_Z));
+  const int y=precisionMouseStep(axisAmount(ABS_RX));
+  if(!x)mouseFracX=0;
+  if(!y)mouseFracY=0;
+  mouseFracX+=x;mouseFracY+=y;
+  const int dx=mouseFracX/MOUSE_SPEED_DEN;
+  const int dy=mouseFracY/MOUSE_SPEED_DEN;
   mouseFracX-=dx*MOUSE_SPEED_DEN;
   mouseFracY-=dy*MOUSE_SPEED_DEN;
   moveVirtualMouse(dx,dy);
 }
+
 static void processHatAxis(unsigned code,int value);
 
 static bool active;
@@ -195,16 +210,18 @@ static void previewNote(const note_t *n){
 }
 static void edit(int d){
   if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
+  if(editor.songPlaying && !liveEditEnabled)return;
   note_t *n=currentNote();if(!n)return;
   /* LSDJ convention: UP means HIGHER, DOWN means LOWER. */
   const int delta=(d==2)?-1:(d==3)?1:(d==0)?12:-12;
   const bool locked=beginPatternWrite();
+  bool audition=false, sampleUIChanged=false;
   switch(cursor.pos%6){
     case CURSOR_NOTE: {
       int next=clamp(pitchOf(n->period)+delta,0,35);
       lastPitch=next;n->period=periods[next];
       /* Pitch remembered, sample number never cached by the adapter. */
-      previewNote(n);
+      audition=true;
     }break;
     case CURSOR_SAMPLE1:
     case CURSOR_SAMPLE2: {
@@ -214,7 +231,8 @@ static void edit(int d){
       const int num=clamp((n->sample?n->sample:selected)+sign*step,1,31);
       n->sample=(uint8_t)num;
       editor.currSample=(int8_t)(num-1);
-      updateCurrSample();
+      sampleUIChanged=true;
+      audition=n->period!=0;
     }break;
     case CURSOR_CMD:
       lastCmd=(uint8_t)wrap((int)n->command+((d<2)?(d==0?4:-4):(d==2?-1:1)),16);
@@ -225,28 +243,45 @@ static void edit(int d){
       n->param=lastParam;break;
   }
   endPatternWrite(locked);
+  if(sampleUIChanged)updateCurrSample();
   changed();
+  if(audition)previewNote(n);
 }
 static void insert(void){
-  note_t *n=currentNote(); if(!n || ui.editTextFlag || ui.askBoxShown)return;
+  if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
+  if(editor.songPlaying && !liveEditEnabled)return;
+  note_t *n=currentNote();if(!n)return;
   const bool locked=beginPatternWrite();
+  bool audition=false;
+  const uint8_t selectedSample=(uint8_t)(clamp(editor.currSample,0,30)+1);
   switch(cursor.pos%6){
     case CURSOR_NOTE:
-      if(!n->period)n->period=periods[lastPitch];
-      if(!n->sample)n->sample=(uint8_t)(clamp(editor.currSample,0,30)+1);
-      /* Same note and (possibly existing) sample as the inserted cell. */
-      previewNote(n);
+      /* A always replaces NOTE and SAMPLE with current pitch and currently
+         selected sample, even if the destination already has a sample. */
+      n->period=periods[lastPitch];
+      n->sample=selectedSample;
+      audition=true;
       break;
     case CURSOR_SAMPLE1:
-    case CURSOR_SAMPLE2: if(!n->sample)n->sample=(uint8_t)(clamp(editor.currSample,0,30)+1);break;
-    case CURSOR_CMD: n->command=lastCmd;break;
+    case CURSOR_SAMPLE2:
+      /* Editing SAMPLE by A also overwrites an existing sample number.
+         Preserve the note pitch and audition using the NEW sample. */
+      n->sample=selectedSample;
+      audition=n->period!=0;
+      break;
+    case CURSOR_CMD:n->command=lastCmd;break;
     case CURSOR_PARAM1:
-    case CURSOR_PARAM2: n->param=lastParam;break;
+    case CURSOR_PARAM2:n->param=lastParam;break;
   }
   endPatternWrite(locked);
   changed();
+  /* Never call upstream Paula preview while holding our own audio lock:
+     the native preview acquires lockAudio() on its own. */
+  if(audition)previewNote(n);
 }
+
 static void erase(void){
+  if(editor.songPlaying && !liveEditEnabled)return;
   note_t *n=currentNote();if(!n)return;
   const bool locked=beginPatternWrite();
   switch(cursor.pos%6){
@@ -269,6 +304,7 @@ static void copyField(void){
   clipboard=*n;clipField=cursor.pos%6;clipboardSet=true;
 }
 static void pasteField(void){
+  if(editor.songPlaying && !liveEditEnabled)return;
   note_t *n=currentNote();if(!n || !clipboardSet)return;
   int f=cursor.pos%6;
   const bool locked=beginPatternWrite();
@@ -288,19 +324,15 @@ static void pasteField(void){
 static void toggleLiveEdit(void){
   if(!song || !editor.songPlaying || ui.askBoxShown || ui.editTextFlag ||
      ui.diskOpScreenShown || ui.samplerScreenShown)return;
+  /* IMPORTANT: v0.3.0 changed editor.currMode from PLAY to RECORD in-place.
+     PT2's RECORD mode has additional state dependencies, so this transition
+     was unsafe and could terminate the process. Keep PT2's native transport
+     mode untouched. Pad writes are enabled separately by liveEditEnabled. */
   liveEditEnabled=!liveEditEnabled;
-  if(liveEditEnabled){
-    editor.currMode=MODE_RECORD;
-    editor.recordMode=RECORD_PATT;
-    pointerSetMode(POINTER_MODE_EDIT,DO_CARRY);
-    displayMsg("PPT LIVE EDIT (PLAYING)");
-  }else{
-    editor.currMode=MODE_PLAY;
-    pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
-    displayMsg("PPT PLAY MODE");
-  }
   ui.updatePatternData=true;
+  logLiveEdit(liveEditEnabled ? "ON" : "OFF");
 }
+
 static void startPlayback(bool songFromRow){
   if(!song || ui.askBoxShown || ui.editTextFlag)return;
   if(editor.songPlaying){
@@ -472,7 +504,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.0 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.1 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -504,7 +536,7 @@ void ppt_input_close(void){
 }
 void ppt_input_update(void){
   if(!active)return;
-  if(!editor.songPlaying && liveEditEnabled){liveEditEnabled=false;}
+  if(!editor.songPlaying && liveEditEnabled){liveEditEnabled=false;logLiveEdit("AUTO_OFF");}
   struct input_event ev;
   for(int i=0;i<DEVICES;i++){
     if(fds[i]<0)continue;
@@ -523,7 +555,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.0 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.1 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -534,7 +566,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.0 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.1 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

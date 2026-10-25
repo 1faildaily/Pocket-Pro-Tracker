@@ -1,22 +1,31 @@
-# Pocket Pro Tracker v0.3.0: FULLSCREEN + LIVE EDIT (eksperymentalny)
+# Pocket Pro Tracker v0.3.1 — poprawka LIVE EDIT, SAMPLE, myszy
 
-To **SourceKit**, nie gotowa binarka. Skopiuj zawartość ZIP do repozytorium przez GitHub Desktop, uruchom Actions. Potem pobierz artefakt i zainstaluj wewnętrzny `pocket_pro_tracker_pt2.zip` przez PortMaster.
+Ta paczka zastępuje SourceKit v0.3.0 w repozytorium GitHub Desktop. To źródła, nie gotowa binarka. Zachowuje oryginalny pełnoekranowy interfejs i playback PT2 Clone 1.92.
 
 ## Zmiany
 
-- Przywrócono pierwotny **FULLSCREENSTRETCH=TRUE** na Anbernicu. Bez 602x480 ani dodatkowego renderera.
-- **L1/R1** uruchamiają natywne `decPatt()` / `incPatt()` (oryginalne ALT + LEFT/RIGHT PT2). Nie zmieniają tabeli pozycji SONG.
-- **A+UP** podwyższa, **A+DOWN** obniża nuty/wartości; A+LEFT/RIGHT pozostaje -1/+1.
-- **SELECT wciśnięty i puszczony SAM podczas odtwarzania** przełącza PLAY <-> LIVE EDIT. Bazuje na MODE_RECORD PT2, bez restartu dźwięku. Edycje patternu są zabezpieczone blokadą audio.
-- SELECT+START nadal PLAY SONG od wybranego ROW; nie wywołuje LIVE EDIT.
-- START = PLAY PATTERN / STOP, L1+M = ESC, L2/R2 = wybór sampla, X/Y = mysz.
+- **SELECT podczas PLAY:** eksperymentalne włączanie/wyłączanie edycji pada bez zatrzymywania utworu i bez zmiany wewnętrznego `editor.currMode` na `MODE_RECORD`. W v0.3.0 to przełączenie było niebezpieczne; rzeczywistej przyczyny powrotu do menu nie potwierdzono bez `launch.log`.
+- **A na polu NOTE:** nadpisuje ZAWSZE nutę ostatnio wybraną oraz numer aktualnie wybranego sampla (L2/R2), także na zajętym wierszu. Dźwięk preview wykorzystuje właśnie nowy sample.
+- **A na polu SAMPLE:** nadpisuje numer sampla wybranym (L2/R2). Gdy w wierszu jest nuta, odtwarza jej podgląd na nowym samplu.
+- **Odsłuch:** odbywa się po zwolnieniu blokady audio. Przy grającym MOD silnik podglądu z v0.3.0 pomija jam, aby nie naruszyć odtwarzania; nowe dane zabrzmią przy ponownym odczycie wiersza przez replayer.
+- **Mysz:** precyzyjny, nieliniowy ruch lewego analoga, z akumulacją subpikseli. Na małych wychyleniach wolniejszy, przy mocnym wychyleniu szybszy.
+- **Pozostałe:** FULLSCREEN oryginalny, D-pad, L1/R1 patter(n), L2/R2 sample, SELECT+START od bieżącego ROW i L1+M ESC zachowane.
 
-**Ograniczenie LIVE EDIT:** wiersz edycji może podążać za playheadem tak jak w trybie RECORD. Zmiany wejdą przy kolejnym odczycie nuty, nie zmieniają brzmienia aktualnie wybrzmiewających dźwięków. Eksperyment testuj na KOPII pliku MOD.
+## Instalacja
 
-## GitHub Desktop
+1. Rozpakuj ZIP.
+2. W GitHub Desktop → Repository → Show in Explorer skopiuj jego zawartość do katalogu repozytorium, nadpisując stare pliki.
+3. Summary: `PPT v0.3.1 - Safe live edit, sample overwrite and precision mouse`
+4. Commit to main → Push origin.
+5. Pobierz ZIP z GitHub Actions, rozpakuj artefakt, a wewnętrzny `pocket_pro_tracker_pt2.zip` wgraj do autoinstall PortMaster.
 
-1. Wypakuj zawartość SourceKit i skopiuj do repozytorium (nie sam folder).
-2. Summary: `PPT v0.3.0 - Restore fullscreen, native pattern switch and live edit`
-3. Commit to main, potem Push origin. Po zielonej kompilacji wgraj wewnętrzny ZIP przez PortMaster.
+## Testy na RG35XX Pro
 
-Testy kontrolera i integracji kodu przeprowadzone lokalnie. **Nie testowano jeszcze na fizycznym Anbernicu.**
+1. Wczytaj KOPIĘ utworu, START, SELECT: muzyka powinna dalej grać. Naciśnij A na NOTE, sprawdź zmianę zawartości wiersza. SELECT ponownie wyłącza eksperymentalną edycję. START zatrzymuje.
+2. Po zatrzymaniu wybierz sample 05 przez L2/R2. Na wierszu zawierającym inny sample i nutę, ustaw NOTE i naciśnij A: nuta powinna zostać zastąpiona zapamiętaną nutą, sample → 05 i słychać preview sampla 05.
+3. Na SAMPLE wstaw A: sample powinien zostać nadpisany aktualnie wybranym samplem, nuta zachowana i podgląd odtworzony.
+4. Zrób krótkie, niewielkie wychylenia lewego analoga w poziomie i pionie: kursor powinien ruszać powoli, bez dużych skoków.
+
+Jeśli SELECT nadal zamyka aplikację, prześlij `ports/pocket_pro_tracker_pt2/launch.log` oraz `ppt_input.log` (końcowe fragmenty). Bez nich nie da się przesądzić, czy to crash PT2, błąd biblioteki SDL, czy zdarzenie systemowe.
+
+**Zastrzeżenie:** testy jednostkowe/makietowe przeprowadzane lokalnie. Pełna kompilacja PT2 na GitHub Actions oraz zachowanie na konsoli wymagają sprawdzenia.
