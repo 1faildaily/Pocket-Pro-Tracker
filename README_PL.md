@@ -1,3 +1,40 @@
+# Pocket Pro Tracker v0.3.10 — POSITION PLAYBACK FOLLOW + RESET LOOP
+
+Zmiany względem v0.3.9:
+
+- Po otwarciu POSITION EDITOR i włączeniu SONG lub PATTERN (START) oryginalna synchronizacja PT2 przesuwa **POSITION, PATTERN i ROW** wraz z muzyką. Wyeliminowano zablokowanie wyświetlania przez `ppt_position_browse_active()`. W samym PATTERN EDITOR podczas LIVE EDIT kursor nadal pozostaje niezależny od odtwarzania.
+- **SELECT + Y w POSITION EDITOR czyści pętlę w całości**: usuwa zakres z pamięci, wyłącza przekierowywanie AUDIO i znika całe szare zaznaczenie. Bez automatycznego ponownego włączenia starego zakresu przy ponownym SELECT+Y. Można zaznaczyć od nowa SELECT+B, D-pad, B.
+- Zaznaczanie pętli podczas odtwarzania przechowuje własny koniec zakresu, niezależny od zmieniającego się PLAYHEAD. Po zatwierdzeniu B zakres odpowiada użyciu D-pada, nie temu, na jaki POS w międzyczasie przeszła muzyka. W czasie trwania zaznaczania i odtwarzania widok POSITION podąża za utworem; dostępny fragment zaznaczenia widać na szaro. W STOP zaznaczanie nadal przewija listę D-padem.
+- Wszystkie funkcje v0.3.9 zachowane: EFFECT GUIDE i limity parametrów, LIVE EDIT, ghost, BLOCK CLIPBOARD, SONGNAME, kontroler, mysz, fullscreen.
+
+**GitHub Desktop Summary:** `PPT v0.3.10 - Restore POSITION playback follow and clear loop selection`
+
+## Test
+
+1. Otwórz POSITION EDITOR, uruchom MENU+START. POSITION i widoczny PATTERN/ROW powinny się aktualizować zgodnie z odtwarzaniem tak jak w PT2.
+2. Wybierz 4 pozycje SELECT+B, D-pad, B. Pętla powinna odtwarzać wybrany zakres, a w POSITION EDITOR podświetlenie pozostawać widoczne.
+3. Wciśnij SELECT+Y. Cały szary zakres musi zniknąć i muzyka po końcu zakresu ma przejść dalej bez zapętlania.
+4. Ponownie zaznacz inny zakres. Wyjdź z POSITION EDITOR, użyj LIVE EDIT. Podstawowy niezależny kursor w patternie nadal musi działać.
+
+**Zakres testowania:** lokalne testy kodu, patchowania i emulowanej logiki kontrolera; pełna kompilacja na GitHub Actions ARM64 oraz fizyczny test Anbernica nie były wykonane.
+
+---
+
+# Pocket Pro Tracker v0.3.9 — EFEKTY: STATUS + BEZPIECZNE ZAKRESY
+
+Zmiany względem v0.3.8:
+- Gdy kursor znajduje się w FX lub parametrze efektu, pasek STATUS wyświetla krótką nazwę komendy ProTrackera (`C SET VOLUME`, `D PATTERN BREAK`, `E4 VIBRATO WAVE` itd.). STATUS zmienia się wraz z kursorem/efektem, również gdy edytujesz istniejący MOD.
+- D-pad przy edycji parametru przestrzega zakresów: Bxx 00–7F; Cxx 00–40 (HEX); Dxx 00–63 (CYFRY DZIESIĘTNE zapisane jako BCD); E3 0/1, E4/E7 0–7 (0–3 normalnie, 4–7 bez restartu fali), E8 0–F (wszystkie działają identycznie); E0 0–F (0=on, 1–F=off); pozostałe Ex 0–F. Pozostałe komendy przyjmują pełny zakres 00–FF.
+- D-pad ↑/↓ zmienia zaznaczony parametr dodatnio/ujemnie, a strzałki ←/→ pozwalają regulować o 1. W przypadku Dxx korekta automatycznie przeskakuje z D59 na D60, nie przechodzi przez nielegalne D5A–D5F.
+- A przy wstawianiu efektu/parametru także ogranicza wartość do dozwolonego zakresu. Niezmienione: LIVE EDIT, POSITION LOOP, kopiowanie LSDJ, ghost, sample, karuzela, mysz (-30%), fullscreen.
+- Nie przepisujemy efektów w już istniejących, załadowanych MOD-ach. Korekta dotyczy ręcznej edycji za pomocą kontrolera, nie całego pliku. Wklejenie pól FX/PARAM stosuje limit, lecz zapis innych pól w archiwalnych modułach pozostaje bez zmian.
+
+**Uwaga:** `E8x` i `EFx` modyfikują dane sampla w pamięci podczas odtwarzania (patrz dokumentacja PT2). `F00` jest poprawną komendą STOP z dokumentacji. `F20–FFF` (32–255) służy do tempa BPM w trybie CIA. Komendy `E4x`/`E7x` dopuszczają także 4–7 mimo opisu „0–3” w nagłówku, bo warianty bez ponownego wyzwalania są legalne.
+
+GitHub Desktop Summary: `PPT v0.3.9 - Effect names in status and safe parameter ranges`
+
+## Poprzednie funkcje (v0.3.8)
+
 # Pocket Pro Tracker v0.3.8 — POSITION SELECT + POSITION LOOP
 
 **SourceKit do GitHub Desktop**, nie gotowy plik wykonywalny ARM64. Bazuje na działającym v0.3.7 z zaznaczaniem LSDJ. Pozostałe skróty, ghost LIVE EDIT i prędkość myszy pozostają bez zmian.
@@ -9,7 +46,7 @@
 3. Ustaw np. **POS 08** i naciśnij **SELECT + B**: rozpocznie się zaznaczanie od tej pozycji, widoczne na szaro.
 4. D-padem dojdź do **POS 11**. Zaznaczony zostanie zakres 08, 09, 10, 11, łącznie cztery pozycje utworu. Naciśnij **B**, aby zatwierdzić i **włączyć pętlę**.
 5. **MENU + START (PLAY)** odtworzy SONG od pierwszej pozycji aktywnej pętli, czyli od POS 08 / ROW 00. Przy końcu POS 11 wróci do 08.
-6. **SELECT + Y** w POSITION EDITOR włącza lub wyłącza pętlę bez utraty zapamiętanego zakresu. Wyłączona pętla zachowuje ciemnoszary znacznik, a muzyka kontynuuje normalny SONG.
+6. **SELECT + Y** w POSITION EDITOR kasuje pętlę oraz całe szare zaznaczenie. Aby zapętlić ponownie, zaznacz nowy zakres.
 7. Ponownie kliknij **POS** lub **EXIT** w oryginalnym edytorze, żeby wrócić do PATTERN EDIT. D-pad znowu pracuje na ROW i polach nut.
 
 ## Rozróżnienie POS i PATTERN
@@ -23,7 +60,7 @@
 
 - Pętla jest **tymczasowa i istnieje w odtwarzaczu**, nie jest zapisywana jako komendy MOD i nie modyfikuje tablicy SONG.
 - Audio zawija na początku pozycji przy wyjściu poza zakres, także wskutek skoku Bxx. Przejście z powrotem do początku pętli ustawia ROW 00. Skoki do pozycji **wewnątrz** zaznaczenia zachowują oryginalną semantykę PT2.
-- Zapamiętany zakres można włączać/wyłączać podczas sesji. Po załadowaniu nowego MOD-a jest czyszczony.
+- Aktywny zakres można usunąć skrótem SELECT + Y podczas sesji. Po załadowaniu nowego MOD-a jest czyszczony.
 - **START** nadal odtwarza wybrany PATTERN, **SELECT + START** pattern od aktualnego ROW, **MENU + START** SONG. Jeśli loop jest nieaktywny, MENU+START startuje od bieżącego POS, jak w v0.3.7.
 - Cały fragment LOOP zostanie wyświetlony szarą belką w oryginalnym POSITION EDITOR. Widok POS pokazuje jedynie aktualnie widoczne pozycje listy.
 - Dla bezpieczeństwa przy pierwszych testach użyj kopii MOD-a. Komendy efektów F00 (stop) pozostają zgodne z PT2, a mechanizm LOOp działa w SONG, nie w PLAY PATTERN.

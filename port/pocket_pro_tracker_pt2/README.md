@@ -1,3 +1,20 @@
+PPT v0.3.10: POSITION follows normal playback; SELECT+Y clears loop and highlight.
+
+# Pocket Pro Tracker v0.3.9 — EFEKTY: STATUS + BEZPIECZNE ZAKRESY
+
+Zmiany względem v0.3.8:
+- Gdy kursor znajduje się w FX lub parametrze efektu, pasek STATUS wyświetla krótką nazwę komendy ProTrackera (`C SET VOLUME`, `D PATTERN BREAK`, `E4 VIBRATO WAVE` itd.). STATUS zmienia się wraz z kursorem/efektem, również gdy edytujesz istniejący MOD.
+- D-pad przy edycji parametru przestrzega zakresów: Bxx 00–7F; Cxx 00–40 (HEX); Dxx 00–63 (CYFRY DZIESIĘTNE zapisane jako BCD); E3 0/1, E4/E7 0–7 (0–3 normalnie, 4–7 bez restartu fali), E8 0–F (wszystkie działają identycznie); E0 0–F (0=on, 1–F=off); pozostałe Ex 0–F. Pozostałe komendy przyjmują pełny zakres 00–FF.
+- D-pad ↑/↓ zmienia zaznaczony parametr dodatnio/ujemnie, a strzałki ←/→ pozwalają regulować o 1. W przypadku Dxx korekta automatycznie przeskakuje z D59 na D60, nie przechodzi przez nielegalne D5A–D5F.
+- A przy wstawianiu efektu/parametru także ogranicza wartość do dozwolonego zakresu. Niezmienione: LIVE EDIT, POSITION LOOP, kopiowanie LSDJ, ghost, sample, karuzela, mysz (-30%), fullscreen.
+- Nie przepisujemy efektów w już istniejących, załadowanych MOD-ach. Korekta dotyczy ręcznej edycji za pomocą kontrolera, nie całego pliku. Wklejenie pól FX/PARAM stosuje limit, lecz zapis innych pól w archiwalnych modułach pozostaje bez zmian.
+
+**Uwaga:** `E8x` i `EFx` modyfikują dane sampla w pamięci podczas odtwarzania (patrz dokumentacja PT2). `F00` jest poprawną komendą STOP z dokumentacji. `F20–FFF` (32–255) służy do tempa BPM w trybie CIA. Komendy `E4x`/`E7x` dopuszczają także 4–7 mimo opisu „0–3” w nagłówku, bo warianty bez ponownego wyzwalania są legalne.
+
+GitHub Desktop Summary: `PPT v0.3.9 - Effect names in status and safe parameter ranges`
+
+## Poprzednie funkcje (v0.3.8)
+
 # Pocket Pro Tracker v0.3.6 · Ghost Playhead + SONG od POSITION
 
 SourceKit bazuje na poprzednim, potwierdzonym na urządzeniu PPT v0.3.2, z oryginalnym silnikiem ProTracker 2 Clone **v1.92**. ZIP zawiera źródła do GitHub Desktop, nie gotowy program ARM64.

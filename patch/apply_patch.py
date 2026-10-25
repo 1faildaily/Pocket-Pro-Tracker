@@ -4,7 +4,7 @@ import sys, pathlib, shutil, re
 root=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
 main=root/'src'/'pt2_main.c'
 assert main.exists(), f'Not a ProTracker 2 source directory: {root}'
-for name in ['ppt_input.c','ppt_input.h']:
+for name in ['ppt_input.c','ppt_input.h','ppt_effects.h']:
     shutil.copy2(pathlib.Path(__file__).with_name(name),root/'src'/name)
 s=main.read_text()
 if 'ppt_input_init' not in s:
@@ -101,7 +101,7 @@ if 'ppt_live_edit_active()' not in rs:
     sync=('\t/* PPT LIVE EDIT: snapshot REAL playback position independently of\n'
           '\t   displayed currRow/currPattern; keep audio transport untouched. */\n'
           '\tppt_set_playhead(modPattern, song->row);\n'
-          '\tif (ppt_live_edit_active() || ppt_position_browse_active())\n'
+          '\tif (ppt_live_edit_active() && !ppt_position_browse_active())\n'
           '\t{\n'
           '\t\tui.updatePatternData = true; /* animate ghost each music row */\n'
           '\t\treturn;\n'

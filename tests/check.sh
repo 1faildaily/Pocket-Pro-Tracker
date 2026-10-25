@@ -31,8 +31,8 @@ with tempfile.TemporaryDirectory() as tmp:
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
  assert 'pptPreviewInsertedNote' in (p/'src/pt2_edit.c').read_text()
  assert 'ppt_input_update();' in (p/'src/pt2_main.c').read_text()
- assert 'if (ppt_live_edit_active() || ppt_position_browse_active())' in (p/'src/pt2_replayer.c').read_text()
- assert (p/'src/pt2_replayer.c').read_text().count('if (ppt_live_edit_active() || ppt_position_browse_active())')==1
+ assert 'if (ppt_live_edit_active() && !ppt_position_browse_active())' in (p/'src/pt2_replayer.c').read_text()
+ assert (p/'src/pt2_replayer.c').read_text().count('if (ppt_live_edit_active() && !ppt_position_browse_active())')==1
  assert 'ppt_loop_redirect(modPos, song->header.songLength)' in (p/'src/pt2_replayer.c').read_text()
  assert (p/'src/pt2_replayer.c').read_text().index('ppt_loop_redirect(modPos') < (p/'src/pt2_replayer.c').read_text().index('if (modPos >= song->header.songLength)')
  assert 'ppt_loop_entry_style(entry)' in (p/'src/pt2_posed.c').read_text()
@@ -49,4 +49,25 @@ s=Path('.github/workflows/build-ppt-arm64.yml').read_text()
 assert 'FULLSCREENSTRETCH=TRUE' in s and 'INTEGERSCALING=FALSE' not in s
 assert 'ppt_scale' not in Path('patch/apply_patch.py').read_text()
 print('Legacy fullscreen configuration OK (v0.3.8)')
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+s=Path('patch/ppt_effects.h').read_text()
+assert all(x in s for x in ['D PATTERN BREAK','C SET VOLUME','E4 VIBRATO WAVE','F SPEED / BPM'])
+assert 'pptEffectStep' in s and 'pptEffectClamp' in s
+assert "'ppt_effects.h'" in Path('patch/apply_patch.py').read_text()
+print('Effect guide integration OK')
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+s=Path('patch/ppt_input.c').read_text()
+assert 'static int posMarkStart, posMarkEnd;' in s
+assert 'const int a=posMarkStart, b=posMarkEnd;' in s
+assert 'const int here=posMarkEnd;' in s
+assert 'if(b==PPT_BTN_Y && held[PPT_BTN_SELECT]){userClearPosLoop();return;}' in s
+assert 'posMarking)movePosMark' in s
+assert 'togglePosLoop(' not in s
+print('POSITION follow independent mark and SELECT+Y full clear: structure OK')
 PY

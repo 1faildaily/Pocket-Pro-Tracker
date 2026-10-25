@@ -26,7 +26,8 @@ void decPatt(void){state.currPattern=(state.currPattern+MAX_PATTERNS-1)%MAX_PATT
 static int lockCalls, unlockCalls;
 void lockAudio(void){assert(!audio.locked);audio.locked=true;lockCalls++;}
 void unlockAudio(void){assert(audio.locked);audio.locked=false;unlockCalls++;}
-void displayMsg(const char *msg){(void)msg;}
+static char lastStatusMessage[64];static int effectStatusMessages;
+void displayMsg(const char *msg){snprintf(lastStatusMessage,sizeof(lastStatusMessage),"%s",msg);effectStatusMessages++;}
 
 void updateWindowTitle(bool modified){state.modified=modified;titleUpdates++;}
 void updateCurrSample(void){sampleUIUpdates++;}
@@ -89,8 +90,47 @@ int main(void){
   edit(0);assert(patt[8].sample>beforeSample);
   edit(1);assert(patt[8].sample==beforeSample);
   cursor.pos=5;state.currRow=3;
-  edit(0);assert(patt[12].param==12);
+  edit(0);assert(patt[12].param==1);
   edit(1);assert(patt[12].param==0);
+  /* v0.3.9 effect limits: C40 max in hex, B7F max, D63 decimal-Bcd. */
+  assert(pptEffectClamp(0xC,0xFF)==0x40);
+  assert(pptEffectClamp(0xB,0xFF)==0x7F);
+  assert(pptEffectClamp(0xD,0x3A)==0x39);
+  assert(pptEffectClamp(0xD,0x6F)==0x63);
+  assert(pptEffectClamp(0xE,0xE4)==0xE4);
+  assert(pptEffectClamp(0xE,0xE8)==0xE8);
+  assert(pptEffectClamp(0xE,0x48)==0x47);
+  assert(pptEffectClamp(0xE,0x78)==0x77);
+  assert(pptEffectClamp(0xE,0x3F)==0x31);
+  assert(pptEffectClamp(0xE,0x8F)==0x8F);
+  assert(pptEffectClamp(0xE,0x0F)==0x0F);
+  assert(pptEffectStep(0xD,0x59,CURSOR_PARAM2,3)==0x60);
+  assert(pptEffectStep(0xD,0x63,CURSOR_PARAM2,3)==0x63);
+  assert(pptEffectStep(0xD,0x00,CURSOR_PARAM2,2)==0x00);
+  assert(pptEffectStep(0xC,0x3F,CURSOR_PARAM2,3)==0x40);
+  assert(pptEffectStep(0xC,0x40,CURSOR_PARAM2,3)==0x40);
+  assert(pptEffectStep(0xE,0x30,CURSOR_PARAM2,3)==0x31);
+  assert(pptEffectStep(0xE,0x31,CURSOR_PARAM2,3)==0x31);
+  assert(pptEffectStep(0xE,0x43,CURSOR_PARAM2,3)==0x44);
+  assert(!strcmp(pptEffectName(0xC,0),"C SET VOLUME"));
+  assert(!strcmp(pptEffectName(0xE,0x42),"E4 VIBRATO WAVE"));
+  /* A on FX/PARAM uses the active effect's range rather than old cached
+     parameter from another effect. */
+  cursor.pos=CURSOR_CMD;state.currRow=8;
+  lastCmd=0xC; lastParam=0xFF; insert();
+  assert(patt[32].command==0xC && patt[32].param==0);
+  cursor.pos=CURSOR_PARAM2;lastParam=0xFF;insert();assert(patt[32].param==0x40);
+  edit(3);assert(patt[32].param==0x40);
+  cursor.pos=CURSOR_CMD;lastCmd=0xD;insert();
+  cursor.pos=CURSOR_PARAM2;lastParam=0x7F;insert();
+  assert(patt[32].command==0xD && patt[32].param==0x63);
+  /* Effect STATUS updates when focus is in FX, without clobbering song
+     title editing and other ProTracker dialogs. */
+  cursor.pos=CURSOR_CMD;lastEffectCursor=-1;updateEffectStatus();
+  assert(!strcmp(lastStatusMessage,"D PATTERN BREAK"));
+  int beforeEffectStatus=effectStatusMessages;
+  updateEffectStatus();assert(effectStatusMessages==beforeEffectStatus);
+  cursor.pos=CURSOR_NOTE;updateEffectStatus();
   /* SELECT alone freezes UI edit position without stopping audio. */
   editor.currMode=MODE_PLAY;editor.songPlaying=true;
   int started=playCalls, stopped=stopCalls;
@@ -416,32 +456,47 @@ int main(void){
   assert(playCalls==playsBefore+1 && playPos==8 && playRow==0 && editor.songPlaying);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
   assert(!editor.songPlaying);
-  /* Disable via SELECT+Y, and enable again without removing range. */
+  /* SELECT+Y fully clears the loop AND the gray highlight.
+     Repeating CLEAR does not restore the old range. */
   buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
   releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
-  assert(ppt_loop_entry_style(9)==1 && ppt_loop_redirect(12,16)==12);
+  assert(ppt_loop_entry_style(9)==0 && ppt_loop_redirect(12,16)==12);
+  assert(atomic_load(&positionLoop)==0 && !posMarking);
   buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
   releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
-  assert(ppt_loop_entry_style(9)==2 && ppt_loop_redirect(12,16)==8);
-  /* Menu song play with disabled loop starts at currently selected POS. */
-  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
-  releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
+  assert(ppt_loop_entry_style(9)==0 && atomic_load(&positionLoop)==0);
+  /* Menu song play without a loop starts at currently selected POS. */
   buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
   releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_MENU);
   assert(playPos==11 && editor.songPlaying);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
-  /* Position selection remains separate from playback while POS editor open. */
+  /* POSITION view must follow native playback, while marking a range
+     uses a separate endpoint (and must not seek the playing song). */
+  state.currPos=8;state.currPattern=18;
   editor.songPlaying=true;atomic_store(&posBrowseActive,true);
   assert(ppt_position_browse_active());
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_B,true);
+  releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_SELECT);
+  assert(posMarking && posMarkStart==8 && posMarkEnd==8);
   int beforeDirection=(int)state.currPos;
-  directionAction(0);
-  assert((int)state.currPos==beforeDirection-1 && editor.songPlaying);
+  directionAction(1);directionAction(1);directionAction(1);
+  assert(posMarkEnd==11 && (int)state.currPos==beforeDirection && editor.songPlaying);
+  /* Mimic PT2's UI display following 2 more audio rows/positions. */
+  state.currPos=10;
+  assert(ppt_loop_entry_style(8)==1 && ppt_loop_entry_style(11)==1);
+  assert(ppt_loop_entry_style(12)==0);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(!posMarking && ppt_loop_entry_style(11)==2);
+  assert(ppt_loop_redirect(12,16)==8); /* 08..11 despite playback POS 10 */
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_Y,true);
+  releaseButton(PPT_BTN_Y);releaseButton(PPT_BTN_SELECT);
+  assert(ppt_loop_entry_style(11)==0 && ppt_loop_redirect(12,16)==12);
   editor.songPlaying=false;atomic_store(&posBrowseActive,false);
   ui.posEdScreenShown=false;
   /* Clearing a loaded module invalidates the in-session selection. */
   clearPosLoop();assert(ppt_loop_entry_style(9)==0 && ppt_loop_redirect(12,16)==12);
   assert(state.header.patternTable[8]==18 && state.header.patternTable[9]==19);
 
-  puts("PPT v0.3.8: POS browse, range preview, loop wrap, transport and toggle OK");
+  puts("PPT v0.3.10: POSITION playback follow, independent mark and full clear OK");
   return 0;
 }
