@@ -7,3 +7,9 @@ void ppt_input_close(void);
 
 /* True while pad editor holds ROW/PATTERN independently of playback. */
 bool ppt_live_edit_active(void);
+
+/* Published from PT2's audio-tick code (pattern index, actual played ROW). */
+void ppt_set_playhead(int pattern, int row);
+/* Returns playhead ROW 0..63 only if the edited pattern is playing and
+   LIVE EDIT is active; -1 otherwise. Safe to call on the GUI thread. */
+int ppt_ghost_row(int displayPattern);

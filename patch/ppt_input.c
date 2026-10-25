@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.2 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.3 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -58,9 +58,25 @@ static bool selectChordUsed;
 bool ppt_live_edit_active(void){
   return atomic_load_explicit(&liveEditEnabled,memory_order_acquire);
 }
+/* PLAYHEAD snapshot from PT2's real audio tick. Packing PATTERN+ROW in one
+   atomic prevents mismatched row/pattern pairs on the SDL display thread.
+   IMPORTANT: the cursor (currRow / currPattern) is NOT updated here. */
+static atomic_int playheadSnapshot = ATOMIC_VAR_INIT(-1);
+void ppt_set_playhead(int pattern, int row){
+  if(pattern>=0 && pattern<MAX_PATTERNS && row>=0 && row<64)
+    atomic_store_explicit(&playheadSnapshot,(pattern<<8)|row,memory_order_release);
+  else
+    atomic_store_explicit(&playheadSnapshot,-1,memory_order_release);
+}
+int ppt_ghost_row(int displayPattern){
+  if(!ppt_live_edit_active() || !editor.songPlaying)return -1;
+  const int snapshot=atomic_load_explicit(&playheadSnapshot,memory_order_acquire);
+  if(snapshot<0 || (snapshot>>8)!=displayPattern)return -1;
+  return snapshot&255;
+}
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.2 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.3 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -88,7 +104,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.2 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.3 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -330,7 +346,7 @@ static void pasteField(void){
   changed();
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
-   pattern from the selected ROW; MENU+START plays SONG from its beginning.
+   pattern from the selected ROW; MENU+START plays SONG from selected POSITION.
    Every START chord stops playback if the replayer is currently running. */
 /* LIVE EDIT: do not change PT2's currMode or audio clock. The patched
    replayer's updateUIPositions() skips copying audio row/pattern/order to
@@ -364,9 +380,11 @@ static void startPlayback(int mode){
     return;
   }
   if(mode==PPT_PLAY_SONG){
-    /* Real SONG transport, from the beginning of the order table. */
+    /* SONG begins at the currently displayed POSITION in the ORDER TABLE.
+       PT2 resolves the matching pattern from song->header.patternTable[pos].
+       Row 00, then subsequent order positions proceed as usual. */
     editor.playMode=PLAY_MODE_NORMAL;
-    modPlay(DONT_SET_PATTERN,0,0);
+    modPlay(DONT_SET_PATTERN,(int16_t)song->currPos,0);
   }else{
     editor.playMode=PLAY_MODE_PATTERN;
     const int8_t row=mode==PPT_PLAY_PATTERN_ROW?(int8_t)song->currRow:0;
@@ -534,7 +552,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.2 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.3 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -586,7 +604,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.2 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.3 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -597,7 +615,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.2 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.3 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

@@ -86,7 +86,7 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.2: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
+# PPT v0.3.3: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
 # into the on-screen editor at each tick. Prevent that only during LIVE EDIT.
 # The Paula transport continues on song->row/modPattern/modPos independently.
 replayer=root/'src'/'pt2_replayer.c'
@@ -98,13 +98,84 @@ if 'ppt_live_edit_active()' not in rs:
     rs=rs.replace(inc,inc+'\n#include "ppt_input.h"',1)
     target='\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;'
     assert rs.count(target)==1, 'PT2 UI sync anchor changed; do not patch audio transport blindly'
-    sync='\t/* PPT LIVE EDIT: do not chase the playhead in the editor. */\n\tif (ppt_live_edit_active())\n\t\treturn;\n\n'
+    sync=('\t/* PPT LIVE EDIT: snapshot REAL playback position independently of\n'
+          '\t   displayed currRow/currPattern; keep audio transport untouched. */\n'
+          '\tppt_set_playhead(modPattern, song->row);\n'
+          '\tif (ppt_live_edit_active())\n'
+          '\t{\n'
+          '\t\tui.updatePatternData = true; /* animate ghost each music row */\n'
+          '\t\treturn;\n'
+          '\t}\n\n')
     rs=rs.replace(target,sync+target,1)
     replayer.write_text(rs)
 else:
     print('PT2 frozen editor/playhead already patched')
 
-# PPT v0.3.2: leave PT2's original renderer alone. The user prefers the
+
+# PPT v0.3.3: gray ghost bar is part of the original PATTERN glyph renderer.
+# The playback row is visible only when it belongs to the CURRENTLY EDITED
+# pattern, and is inside the fixed 15-row viewport. Draw behind notes so no
+# alpha-overlay can wash out the ProTracker font.
+viewer=root/'src'/'pt2_pattern_viewer.c'
+assert viewer.exists(), f'Missing upstream PT2 pattern renderer: {viewer}'
+ps=viewer.read_text()
+if 'ppt_ghost_row(' not in ps:
+    inc='#include "pt2_visuals.h"'
+    assert ps.count(inc)==1, 'PT2 pattern-viewer include anchor changed'
+    ps=ps.replace(inc,inc+'\n#include "ppt_input.h"',1)
+    anchor='else // non-middle rows'
+    assert ps.count(anchor)==2, 'Expected the normal and dotted pattern-view blocks'
+    # Patch each brace-delimited row-drawing block independently. Guard every
+    # renderer anchor before replacement; abort on unexpected upstream changes.
+    offsets=[]
+    start=0
+    for _ in range(2):
+        at=ps.index(anchor,start)
+        op=ps.index('{',at)
+        depth=1
+        k=op+1
+        while depth and k<len(ps):
+            if ps[k]=='{':depth+=1
+            elif ps[k]=='}':depth-=1
+            k+=1
+        assert depth==0, 'Malformed non-middle row block'
+        offsets.append((op,k))
+        start=k
+    for op,k in reversed(offsets):
+        block=ps[op:k]
+        assert block.count('video.palette[PAL_PATTXT]')>=4, 'PT2 pattern foreground anchor changed'
+        assert block.count('video.palette[PAL_BACKGRD]')>=4, 'PT2 pattern background anchor changed'
+        block=block.replace('video.palette[PAL_PATTXT]','pptGhostText')
+        block=block.replace('video.palette[PAL_BACKGRD]','pptGhostBg')
+        insert=('\n\t\t\t\t/* Ghost is painted BEHIND font glyphs. Redraw full text cells on\n'
+                '\t\t\t\t   every frame to remove the previous ghost without erasing vertical\n'
+                '\t\t\t\t   track separators from ProTracker itself. */\n'
+                '\t\t\t\tconst bool pptIsGhost = row == ppt_ghost_row(song->currPattern);\n'
+                '\t\t\t\tconst uint32_t pptGhostBg = pptIsGhost ? 0xFF696969u : video.palette[PAL_BACKGRD];\n'
+                '\t\t\t\tconst uint32_t pptGhostText = pptIsGhost ? video.palette[PAL_GENTXT] : video.palette[PAL_PATTXT];\n'
+                '\t\t\t\tfillRect(8, y, 16, 7, pptGhostBg);\n'
+                '\t\t\t\tfor (int pptCh = 0; pptCh < 4; pptCh++)\n'
+                '\t\t\t\t\tfillRect(32 + pptCh*72, y, 64, 7, pptGhostBg);\n')
+        block=block[0]+insert+block[1:]
+        ps=ps[:op]+block+ps[k:]
+    assert ps.count('const bool pptIsGhost')==2
+    # PT2 also renders blank rows outside 00..63 while scrolling. Clear
+    # those old ghost cells completely, including the two pixel row spacing.
+    invalid='if (row < 0 || row >= MOD_ROWS)'
+    assert ps.count(invalid)==2, 'PT2 pattern edge-of-viewport anchor changed'
+    for _ in range(2):
+        at=ps.index(invalid) if _==0 else ps.index(invalid, at+len(invalid))
+        op=ps.index('{',at)
+        clear=('\n\t\t\t/* PPT ghost cleanup beyond pattern boundaries. */\n'
+               '\t\t\tfillRect(8, y, 16, 7, video.palette[PAL_BACKGRD]);\n'
+               '\t\t\tfor (int pptCh = 0; pptCh < 4; pptCh++)\n'
+               '\t\t\t\tfillRect(32 + pptCh*72, y, 64, 7, video.palette[PAL_BACKGRD]);\n')
+        ps=ps[:op+1]+clear+ps[op+1:]
+    viewer.write_text(ps)
+else:
+    print('PT2 ghost pattern-view already patched')
+
+# PPT v0.3.3: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.2 original PT2 fullscreen renderer retained')
+print('PPT v0.3.3 original PT2 fullscreen renderer retained')

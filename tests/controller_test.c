@@ -51,6 +51,18 @@ int main(void){
   assert(rawMap[PPT_BTN_SELECT]==310 && rawMap[PPT_BTN_START]==311);
   assert(rawMap[PPT_BTN_L1]==308 && rawMap[PPT_BTN_R1]==309);
   assert(menuRawCode(312));
+  /* Ghost is invisible in STOP, ordinary PLAY or different pattern. */
+  ppt_set_playhead(3,27);
+  assert(ppt_ghost_row(3)==-1);
+  atomic_store(&liveEditEnabled,true);editor.songPlaying=true;
+  assert(ppt_ghost_row(3)==27);
+  assert(ppt_ghost_row(4)==-1);
+  ppt_set_playhead(4,63);
+  assert(ppt_ghost_row(4)==63);
+  assert(ppt_ghost_row(3)==-1);
+  ppt_set_playhead(255,0);
+  assert(ppt_ghost_row(4)==-1);
+  atomic_store(&liveEditEnabled,false);editor.songPlaying=false;
   /* Original ProTracker ALT+LEFT/RIGHT semantics: PATTERN changes; ORDER TABLE doesn't. */
   state.header.patternTable[0]=17;
   state.currPattern=7;
@@ -146,17 +158,17 @@ int main(void){
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
   assert(playPatt==2 && playRow==0 && playPos==DONT_SET_ORDER);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
-  /* MENU+START plays SONG from order 0, row 0. */
+  /* MENU+START plays SONG from CURRENT POSITION, row 00. */
   state.currRow=38;state.currPos=7;
   buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_START);
   assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL);
-  assert(playPatt==DONT_SET_PATTERN && playPos==0 && playRow==0);
+  assert(playPatt==DONT_SET_PATTERN && playPos==7 && playRow==0);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
   /* Reversed press order START -> MENU also starts SONG. */
   buttonEvent(PPT_BTN_START,true);buttonEvent(PPT_BTN_MENU,true);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_START);
-  assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL && playPos==0);
+  assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL && playPos==7);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
     /* L1+M stays ESC, L1 can't accidentally increment or decrement pattern. */
   state.currPattern=7;
@@ -164,6 +176,6 @@ int main(void){
   assert(lastEvent.key.keysym.scancode==SDL_SCANCODE_ESCAPE);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_L1);
   assert(state.currPattern==7);
-  puts("PPT v0.3.2: frozen edit row, pattern switching, independent transport, menu+start OK");
+  puts("PPT v0.3.3: frozen edit row, pattern switching, independent transport, menu+start OK");
   return 0;
 }

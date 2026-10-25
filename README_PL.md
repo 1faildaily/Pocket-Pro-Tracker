@@ -1,36 +1,37 @@
-# Pocket Pro Tracker v0.3.2 · Frozen Cursor / Transport
+# Pocket Pro Tracker v0.3.3 · Ghost Playhead + SONG od POSITION
 
-SourceKit dla **ProTracker 2 Clone v1.92** na RG35XX Pro / muOS.
-To paczka źródłowa do GitHub Desktop. NIE zawiera gotowego pliku wykonywalnego ARM64.
+SourceKit bazuje na poprzednim, potwierdzonym na urządzeniu PPT v0.3.2, z oryginalnym silnikiem ProTracker 2 Clone **v1.92**. ZIP zawiera źródła do GitHub Desktop, nie gotowy program ARM64.
 
-## Nowe tryby PLAY
+## Zmiany v0.3.3
+
+**MENU + START**: uruchamia odtwarzanie całego SONG od *aktualnie ustawionej pozycji POS*, zaczynając od ROW 00. Odtwarzany pattern jest pobierany z `song->header.patternTable[song->currPos]` (przez oryginalną funkcję `modPlay(DONT_SET_PATTERN, song->currPos, 0)`). Song dalej przechodzi po następnych pozycjach tabeli.
+
+**SELECT podczas PLAY**: LIVE EDIT nadal nie przesuwa edytora za odtwarzaczem. Dodatkowo w widoku patternu będzie widoczny niezależny **szary ghost playhead**, czyli delikatniejsza, szara belka w wierszu faktycznie odtwarzanym. Wybrany ROW kursora pozostaje bez zmian.
+
+Ghost jest rysowany jako szare tło *pod* tekstem patternu, w dwóch trybach wyświetlania ProTrackera (normal/dotted), bez nakładania przeźroczystej warstwy na fonty. Klatka odświeża się na każdy odtwarzany wiersz. Poprzednia szara belka zostaje wyczyszczona bez naruszania pionowych separatorów kanałów. Kiedy playhead znajdzie się poza widocznym oknem 15 wierszy, belka nie jest widoczna (edytor nie przewija się sam). Gdy edytujesz inny pattern niż grający, belka się nie pojawia. Kiedy oba kursory znajdą się w tym samym wierszu, pierwszeństwo ma wyróżnienie głównego kursora PT2.
+
+Źródłem pozycji ghosta jest migawka `modPattern` + `song->row` z oryginalnej pętli audio PT2, publikowana atomowo (bez naruszania `song->currRow`, `song->currPattern`, zegara ani mixera). Pozostałe zachowania i oryginalny FULL SCREEN bez zmian.
+
+## Sterowanie transportem
 
 | Skrót | Funkcja |
 |---|---|
-| START | PLAY PATTERN od ROW 00; jeśli gra, STOP |
-| SELECT + START | PLAY bieżącego PATTERN od zaznaczonego ROW, nie SONG |
-| MENU (M) + START | PLAY SONG od pierwszej pozycji (order 00, ROW 00) |
-| SELECT podczas PLAY | Przełącz LIVE EDIT, bez restartu/STOP |
-| L1 + M | Oryginalny ESC (potwierdzenie wyjścia) |
-| L1 + START | Awaryjny ESC |
+| START | PLAY PATTERN od ROW 00, w czasie PLAY = STOP |
+| SELECT + START | PLAY PATTERN od zaznaczonego ROW |
+| MENU + START | PLAY SONG od bieżącego POSITION, ROW 00 |
+| SELECT podczas odtwarzania | LIVE EDIT wł./wył., niezależny kursor i ghost |
+| L1 / R1 | Wybór PATTERN −1/+1, podczas LIVE EDIT bez ruszania grającego patternu |
+| L2 / R2 | Wybór aktywnego sampla |
+| A | Wstaw nutę i bieżący sample, z podglądem |
+| L1 + MENU | ESC i oryginalne potwierdzenie wyjścia |
 
-## LIVE EDIT: kursor niezależny od odtwarzania
+## Instalacja
 
-W starszej wersji PT2 `updateUIPositions()` w `pt2_replayer.c` nadpisywał przy każdym takcie `song->currRow` (wiersz edytora) wartością `song->row` (wiersz odtwarzacza). W tej wersji nakładka blokuje **tylko tę synchronizację UI** w trybie LIVE EDIT. Nie zmienia zegara audio. Można przesuwać kursor D-padem do innego ROW, a odtwarzanie płynie dalej.
-
-W LIVE EDIT przełączanie L1/R1 zmienia tylko `song->currPattern` (wyświetlany/edytowany pattern), a nie `modPattern` silnika audio. To umożliwia edycję innego patternu bez przestawienia grającego patternu. Po wyłączeniu LIVE EDIT, przy następnym takcie obraz ponownie śledzi odtwarzacz.
-
-Pozostałe sterowanie v0.3.1 zachowane: L2/R2 = wybór sampla; A = wstaw nutę i aktywny sample (nadpisując istniejący); A + D-pad = zmiana wysokości/wartości; X/Y = kliknięcia myszy; lewy analog = precyzyjna mysz. FULL SCREEN jak na początku prac.
-
-**Eksperymentalne:** testuj na kopii MOD. Synchronizacja zmian z audio jest zabezpieczona przez lockAudio() tylko na czas modyfikacji; kompilację ARM64 i działanie na fizycznym Anbernicu trzeba jeszcze potwierdzić.
-
-## GitHub Desktop
-
-1. Wypakuj SourceKit i skopiuj jego zawartość (w tym ukryty `.github`) do katalogu repozytorium.
-2. Summary: `PPT v0.3.2 - Frozen live edit cursor and independent song transport`
+1. Rozpakuj SourceKit do repozytorium w GitHub Desktop, zastępując stare pliki (również w ukrytym folderze `.github`).
+2. Summary: `PPT v0.3.3 - Ghost playhead and song from current position`
 3. Commit to main → Push origin.
-4. Po zielonym Actions pobierz artefakt, włóż wewnętrzny ZIP do muOS PortMaster `autoinstall`.
+4. Po zielonej kompilacji pobierz artefakt ZIP, rozpakuj, a wewnętrzny `pocket_pro_tracker_pt2.zip` zainstaluj przez PortMaster.
 
-## Testy lokalne
+## Testy
 
-`bash tests/check.sh` sprawdza sterowanie i nakładanie patcha na wzorcowe fragmenty kodu, nie pełną kompilację PT2.
+`bash tests/check.sh` uruchamia lokalne testy sterowania, idempotencji patchera i kodu ghosta. GitHub Actions dopiero zbuduje prawdziwe PT2 na ARM64. Przed użyciem na występie sprawdź na kopii MOD, czy ghost porusza się prawidłowo i nic nie zatrzymuje odtwarzania.
