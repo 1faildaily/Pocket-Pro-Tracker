@@ -71,13 +71,24 @@ int main(void){
   cursor.pos=5;state.currRow=3;
   edit(0);assert(patt[12].param==12);
   edit(1);assert(patt[12].param==0);
-  /* SELECT alone while music plays switches to edit without modStop/modPlay. */
+  /* SELECT alone freezes UI edit position without stopping audio. */
   editor.currMode=MODE_PLAY;editor.songPlaying=true;
   int started=playCalls, stopped=stopCalls;
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
-  assert(editor.currMode==MODE_PLAY && liveEditEnabled);
+  assert(editor.currMode==MODE_PLAY && ppt_live_edit_active());
   assert(editor.songPlaying && playCalls==started && stopCalls==stopped);
-  /* LIVE EDIT keeps the original MODE_PLAY and pointer state intact. */
+  /* LIVE EDIT keeps original MODE_PLAY and editor row independent of playhead. */
+  state.row=27; state.currRow=4; state.currPattern=0;
+  int unchangedRow=state.currRow; unsigned int beforePattern=state.currPattern;
+  /* PT2 replayer sync is patched to skip when ppt_live_edit_active(). */
+  assert(ppt_live_edit_active());
+  buttonEvent(PPT_BTN_R1,true);releaseButton(PPT_BTN_R1);
+  assert(state.currPattern==beforePattern+1);
+  assert(state.row==27 && state.currRow==unchangedRow);
+  buttonEvent(PPT_BTN_L1,true);releaseButton(PPT_BTN_L1);
+  assert(state.currPattern==beforePattern);
+  navigate(1);assert(state.currRow==unchangedRow+1 && state.row==27);
+
   /* Editing while playing locks the audio callback for atomic data update. */
   state.currRow=4;cursor.pos=0;
   int beforeLocks=lockCalls;
@@ -88,7 +99,7 @@ int main(void){
   /* Native audio preview is attempted only AFTER unlocking the mixer. */
   assert(previewSample==4);
   /* Selecting another sample and pressing A overwrites OLD note+sample. */
-  editor.songPlaying=false;liveEditEnabled=false;
+  editor.songPlaying=false;atomic_store(&liveEditEnabled,false);
   cursor.pos=0;state.currRow=5; editor.currSample=7;
   patt[20].period=periods[1];patt[20].sample=3;
   int previewBefore=previewCalls;
@@ -105,20 +116,21 @@ int main(void){
   assert(precisionMouseStep(32767)>precisionMouseStep(8000));
   assert(precisionMouseStep(-8000)==-precisionMouseStep(8000));
   /* No hidden edits are allowed while playing but LIVE EDIT is off. */
-  editor.songPlaying=true;liveEditEnabled=false;
+  editor.songPlaying=true;atomic_store(&liveEditEnabled,false);
   state.currRow=6;cursor.pos=0;patt[24].period=periods[2];patt[24].sample=3;
   insert();assert(patt[24].period==periods[2] && patt[24].sample==3);
   /* SELECT again returns to PLAY without restarting or stopping. */
-  editor.songPlaying=true;liveEditEnabled=true;cursor.pos=0;
+  editor.songPlaying=true;atomic_store(&liveEditEnabled,true);cursor.pos=0;
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
   assert(editor.currMode==MODE_PLAY && !liveEditEnabled && editor.songPlaying);
   assert(playCalls==started && stopCalls==stopped);
-  /* SELECT+START is a chord, not a live-edit toggle. */
+  /* SELECT+START now plays PATTERN FROM ROW (not SONG). */
   modStop(); editor.currMode=MODE_IDLE;
   state.currPos=5;state.currRow=16;
   buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_START,true);
   releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_SELECT);
-  assert(playCalls==started+1 && playPos==5 && playRow==16);
+  assert(playCalls==started+1 && playPatt==(int)state.currPattern &&
+         playPos==DONT_SET_ORDER && playRow==16 && editor.playMode==PLAY_MODE_PATTERN);
   assert(editor.currMode==MODE_PLAY && !liveEditEnabled);
   /* SELECT held while pressing A doesn't flip playback mode. */
   buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
@@ -129,12 +141,29 @@ int main(void){
   assert(liveEditEnabled);
   buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
   assert(!editor.songPlaying && editor.currMode==MODE_IDLE && !liveEditEnabled);
-  /* L1+M stays ESC, L1 can't accidentally increment or decrement pattern. */
+  /* START alone plays PATTERN from ROW 00. */
+  state.currPattern=2;state.currRow=29;
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
+  assert(playPatt==2 && playRow==0 && playPos==DONT_SET_ORDER);
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
+  /* MENU+START plays SONG from order 0, row 0. */
+  state.currRow=38;state.currPos=7;
+  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
+  releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_START);
+  assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL);
+  assert(playPatt==DONT_SET_PATTERN && playPos==0 && playRow==0);
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
+  /* Reversed press order START -> MENU also starts SONG. */
+  buttonEvent(PPT_BTN_START,true);buttonEvent(PPT_BTN_MENU,true);
+  releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_START);
+  assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL && playPos==0);
+  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
+    /* L1+M stays ESC, L1 can't accidentally increment or decrement pattern. */
   state.currPattern=7;
   buttonEvent(PPT_BTN_L1,true);buttonEvent(PPT_BTN_MENU,true);
   assert(lastEvent.key.keysym.scancode==SDL_SCANCODE_ESCAPE);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_L1);
   assert(state.currPattern==7);
-  puts("PPT v0.3.1: live edit safe, sample overwrite, preview, precise mouse, chords OK");
+  puts("PPT v0.3.2: frozen edit row, pattern switching, independent transport, menu+start OK");
   return 0;
 }

@@ -1,31 +1,36 @@
-# Pocket Pro Tracker v0.3.1 — poprawka LIVE EDIT, SAMPLE, myszy
+# Pocket Pro Tracker v0.3.2 · Frozen Cursor / Transport
 
-Ta paczka zastępuje SourceKit v0.3.0 w repozytorium GitHub Desktop. To źródła, nie gotowa binarka. Zachowuje oryginalny pełnoekranowy interfejs i playback PT2 Clone 1.92.
+SourceKit dla **ProTracker 2 Clone v1.92** na RG35XX Pro / muOS.
+To paczka źródłowa do GitHub Desktop. NIE zawiera gotowego pliku wykonywalnego ARM64.
 
-## Zmiany
+## Nowe tryby PLAY
 
-- **SELECT podczas PLAY:** eksperymentalne włączanie/wyłączanie edycji pada bez zatrzymywania utworu i bez zmiany wewnętrznego `editor.currMode` na `MODE_RECORD`. W v0.3.0 to przełączenie było niebezpieczne; rzeczywistej przyczyny powrotu do menu nie potwierdzono bez `launch.log`.
-- **A na polu NOTE:** nadpisuje ZAWSZE nutę ostatnio wybraną oraz numer aktualnie wybranego sampla (L2/R2), także na zajętym wierszu. Dźwięk preview wykorzystuje właśnie nowy sample.
-- **A na polu SAMPLE:** nadpisuje numer sampla wybranym (L2/R2). Gdy w wierszu jest nuta, odtwarza jej podgląd na nowym samplu.
-- **Odsłuch:** odbywa się po zwolnieniu blokady audio. Przy grającym MOD silnik podglądu z v0.3.0 pomija jam, aby nie naruszyć odtwarzania; nowe dane zabrzmią przy ponownym odczycie wiersza przez replayer.
-- **Mysz:** precyzyjny, nieliniowy ruch lewego analoga, z akumulacją subpikseli. Na małych wychyleniach wolniejszy, przy mocnym wychyleniu szybszy.
-- **Pozostałe:** FULLSCREEN oryginalny, D-pad, L1/R1 patter(n), L2/R2 sample, SELECT+START od bieżącego ROW i L1+M ESC zachowane.
+| Skrót | Funkcja |
+|---|---|
+| START | PLAY PATTERN od ROW 00; jeśli gra, STOP |
+| SELECT + START | PLAY bieżącego PATTERN od zaznaczonego ROW, nie SONG |
+| MENU (M) + START | PLAY SONG od pierwszej pozycji (order 00, ROW 00) |
+| SELECT podczas PLAY | Przełącz LIVE EDIT, bez restartu/STOP |
+| L1 + M | Oryginalny ESC (potwierdzenie wyjścia) |
+| L1 + START | Awaryjny ESC |
 
-## Instalacja
+## LIVE EDIT: kursor niezależny od odtwarzania
 
-1. Rozpakuj ZIP.
-2. W GitHub Desktop → Repository → Show in Explorer skopiuj jego zawartość do katalogu repozytorium, nadpisując stare pliki.
-3. Summary: `PPT v0.3.1 - Safe live edit, sample overwrite and precision mouse`
-4. Commit to main → Push origin.
-5. Pobierz ZIP z GitHub Actions, rozpakuj artefakt, a wewnętrzny `pocket_pro_tracker_pt2.zip` wgraj do autoinstall PortMaster.
+W starszej wersji PT2 `updateUIPositions()` w `pt2_replayer.c` nadpisywał przy każdym takcie `song->currRow` (wiersz edytora) wartością `song->row` (wiersz odtwarzacza). W tej wersji nakładka blokuje **tylko tę synchronizację UI** w trybie LIVE EDIT. Nie zmienia zegara audio. Można przesuwać kursor D-padem do innego ROW, a odtwarzanie płynie dalej.
 
-## Testy na RG35XX Pro
+W LIVE EDIT przełączanie L1/R1 zmienia tylko `song->currPattern` (wyświetlany/edytowany pattern), a nie `modPattern` silnika audio. To umożliwia edycję innego patternu bez przestawienia grającego patternu. Po wyłączeniu LIVE EDIT, przy następnym takcie obraz ponownie śledzi odtwarzacz.
 
-1. Wczytaj KOPIĘ utworu, START, SELECT: muzyka powinna dalej grać. Naciśnij A na NOTE, sprawdź zmianę zawartości wiersza. SELECT ponownie wyłącza eksperymentalną edycję. START zatrzymuje.
-2. Po zatrzymaniu wybierz sample 05 przez L2/R2. Na wierszu zawierającym inny sample i nutę, ustaw NOTE i naciśnij A: nuta powinna zostać zastąpiona zapamiętaną nutą, sample → 05 i słychać preview sampla 05.
-3. Na SAMPLE wstaw A: sample powinien zostać nadpisany aktualnie wybranym samplem, nuta zachowana i podgląd odtworzony.
-4. Zrób krótkie, niewielkie wychylenia lewego analoga w poziomie i pionie: kursor powinien ruszać powoli, bez dużych skoków.
+Pozostałe sterowanie v0.3.1 zachowane: L2/R2 = wybór sampla; A = wstaw nutę i aktywny sample (nadpisując istniejący); A + D-pad = zmiana wysokości/wartości; X/Y = kliknięcia myszy; lewy analog = precyzyjna mysz. FULL SCREEN jak na początku prac.
 
-Jeśli SELECT nadal zamyka aplikację, prześlij `ports/pocket_pro_tracker_pt2/launch.log` oraz `ppt_input.log` (końcowe fragmenty). Bez nich nie da się przesądzić, czy to crash PT2, błąd biblioteki SDL, czy zdarzenie systemowe.
+**Eksperymentalne:** testuj na kopii MOD. Synchronizacja zmian z audio jest zabezpieczona przez lockAudio() tylko na czas modyfikacji; kompilację ARM64 i działanie na fizycznym Anbernicu trzeba jeszcze potwierdzić.
 
-**Zastrzeżenie:** testy jednostkowe/makietowe przeprowadzane lokalnie. Pełna kompilacja PT2 na GitHub Actions oraz zachowanie na konsoli wymagają sprawdzenia.
+## GitHub Desktop
+
+1. Wypakuj SourceKit i skopiuj jego zawartość (w tym ukryty `.github`) do katalogu repozytorium.
+2. Summary: `PPT v0.3.2 - Frozen live edit cursor and independent song transport`
+3. Commit to main → Push origin.
+4. Po zielonym Actions pobierz artefakt, włóż wewnętrzny ZIP do muOS PortMaster `autoinstall`.
+
+## Testy lokalne
+
+`bash tests/check.sh` sprawdza sterowanie i nakładanie patcha na wzorcowe fragmenty kodu, nie pełną kompilację PT2.

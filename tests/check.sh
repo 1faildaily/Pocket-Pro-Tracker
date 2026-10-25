@@ -23,11 +23,14 @@ with tempfile.TemporaryDirectory() as tmp:
  p=Path(tmp);(p/'src').mkdir()
  (p/'src/pt2_main.c').write_text('#include "pt2_keyboard.h"\nvoid f(){\n\tloadConfig();\n\tSDL_EventState(SDL_DROPFILE, SDL_ENABLE);\n\twhile (1) {\n\t\thandleInput();\n\t}\n\tcleanUp();\n\tSDL_Quit();\n\n\treturn 0;\n}\n')
  (p/'src/pt2_askbox.c').write_text('#include "pt2_askbox.h"\nvoid f(){\n\t\treadMouseXY();\n}\n')
+ (p/'src/pt2_replayer.c').write_text('#include "pt2_visuals_sync.h"\nstatic void updateUIPositions(void)\n{\n\tif (editor.mod2WavOngoing || editor.pat2SmpOngoing)\n\t\treturn;\n\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;\n}\n')
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
  assert 'pptPreviewInsertedNote' in (p/'src/pt2_edit.c').read_text()
  assert 'ppt_input_update();' in (p/'src/pt2_main.c').read_text()
+ assert 'if (ppt_live_edit_active())' in (p/'src/pt2_replayer.c').read_text()
+ assert (p/'src/pt2_replayer.c').read_text().count('if (ppt_live_edit_active())')==1
  assert not (p/'src/pt2_visuals.c').exists()
 print('Source integration and idempotency OK')
 PY
@@ -36,5 +39,5 @@ from pathlib import Path
 s=Path('.github/workflows/build-ppt-arm64.yml').read_text()
 assert 'FULLSCREENSTRETCH=TRUE' in s and 'INTEGERSCALING=FALSE' not in s
 assert 'ppt_scale' not in Path('patch/apply_patch.py').read_text()
-print('Legacy fullscreen configuration OK (v0.3.1)')
+print('Legacy fullscreen configuration OK (v0.3.2)')
 PY

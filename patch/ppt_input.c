@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.1 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.2 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -9,6 +9,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
@@ -50,10 +51,16 @@ static uint8_t lastCmd=0, lastParam=0;
 static bool shoulderUsed[2];
 /* SELECT alone switches between PLAY and native RECORD-style live editing.
    The transport keeps running, and SELECT+START must NOT toggle this mode. */
-static bool liveEditEnabled, selectChordUsed;
+/* Audio callback and main SDL thread share this flag. Keep it atomic so
+   the replayer can skip ONLY the UI position sync while remaining realtime. */
+static atomic_bool liveEditEnabled;
+static bool selectChordUsed;
+bool ppt_live_edit_active(void){
+  return atomic_load_explicit(&liveEditEnabled,memory_order_acquire);
+}
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.1 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.2 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -81,7 +88,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.1 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.2 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -189,12 +196,19 @@ static void navigate(int d){
   updateCursorPos();
 }
 extern void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex);
-/* Same native callbacks as upstream PT2 ALT+LEFT / ALT+RIGHT.
-   DO NOT rewrite the song order table (older PPT versions did that). */
+/* In STOP/ordinary PLAY, keep upstream PT2 ALT+left/right behavior.
+   In LIVE EDIT, NEVER use incPatt/decPatt: those also change the audio
+   replayer's internal modPattern. Instead switch only the editor's pattern. */
 static void changePattern(int step){
   if(!song || ui.askBoxShown || ui.editTextFlag ||
      ui.diskOpScreenShown || ui.samplerScreenShown)return;
-  if(step<0)decPatt();
+  if(ppt_live_edit_active() && editor.songPlaying){
+    const bool locked=beginPatternWrite();
+    song->currPattern=(uint16_t)wrap((int)song->currPattern+step,MAX_PATTERNS);
+    ui.updateCurrPattText=true;
+    ui.updatePatternData=true;
+    endPatternWrite(locked);
+  }else if(step<0)decPatt();
   else incPatt();
 }
 /* Use PT2's own sample change functions, which also update the sample info. */
@@ -315,12 +329,13 @@ static void pasteField(void){
   endPatternWrite(locked);
   changed();
 }
-/* Playback actions use the original PT2 replayer, preserving MOD semantics.
-   START = PLAY PATTERN, or STOP if anything is already playing.
-   SELECT (physical SHIFT)+START = PLAY SONG from current order AND ROW. */
-/* Experimental non-restarting switch: PT2 already supports editing while
-   songPlaying is true through MODE_RECORD. Track cursor follows the playhead.
-   This avoids changing PT2's replayer clock or triggering another modPlay(). */
+/* Transport: START plays pattern from 00; SELECT+START plays the SAME
+   pattern from the selected ROW; MENU+START plays SONG from its beginning.
+   Every START chord stops playback if the replayer is currently running. */
+/* LIVE EDIT: do not change PT2's currMode or audio clock. The patched
+   replayer's updateUIPositions() skips copying audio row/pattern/order to
+   the display while live edit is enabled. Audio continues on song->row.
+   D-pad can move the separate editor view (song->currRow). */
 static void toggleLiveEdit(void){
   if(!song || !editor.songPlaying || ui.askBoxShown || ui.editTextFlag ||
      ui.diskOpScreenShown || ui.samplerScreenShown)return;
@@ -328,37 +343,44 @@ static void toggleLiveEdit(void){
      PT2's RECORD mode has additional state dependencies, so this transition
      was unsafe and could terminate the process. Keep PT2's native transport
      mode untouched. Pad writes are enabled separately by liveEditEnabled. */
-  liveEditEnabled=!liveEditEnabled;
+  /* Prevent an audio tick from advancing the UI midway through toggling. */
+  const bool locked=beginPatternWrite();
+  const bool next=!ppt_live_edit_active();
+  atomic_store_explicit(&liveEditEnabled,next,memory_order_release);
   ui.updatePatternData=true;
-  logLiveEdit(liveEditEnabled ? "ON" : "OFF");
+  endPatternWrite(locked);
+  logLiveEdit(next ? "ON_FROZEN_CURSOR" : "OFF_FOLLOW_PLAYHEAD");
 }
 
-static void startPlayback(bool songFromRow){
+enum { PPT_PLAY_PATTERN, PPT_PLAY_PATTERN_ROW, PPT_PLAY_SONG };
+static void startPlayback(int mode){
   if(!song || ui.askBoxShown || ui.editTextFlag)return;
   if(editor.songPlaying){
+    atomic_store(&liveEditEnabled,false);
     modStop();
-    liveEditEnabled=false;
     editor.currMode=MODE_IDLE;
     pointerSetMode(POINTER_MODE_IDLE,DO_CARRY);
     statusAllRight();
     return;
   }
-  if(songFromRow){
+  if(mode==PPT_PLAY_SONG){
+    /* Real SONG transport, from the beginning of the order table. */
     editor.playMode=PLAY_MODE_NORMAL;
-    modPlay(DONT_SET_PATTERN,song->currPos,(int8_t)song->currRow);
+    modPlay(DONT_SET_PATTERN,0,0);
   }else{
     editor.playMode=PLAY_MODE_PATTERN;
-    modPlay(song->currPattern,DONT_SET_ORDER,DONT_SET_ROW);
+    const int8_t row=mode==PPT_PLAY_PATTERN_ROW?(int8_t)song->currRow:0;
+    modPlay(song->currPattern,DONT_SET_ORDER,row);
   }
   editor.currMode=MODE_PLAY;
-  liveEditEnabled=false;
+  atomic_store(&liveEditEnabled,false);
   pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
   statusAllRight();
 }
 /* Dispatch the real Escape key to PT2's existing keyboard handler. In the
    main view this opens REALLY QUIT ?, from subviews it navigates back.
    Never force editor.programRunning=false and never bypass the confirmation. */
-static bool exitChordSent, startPending, startWithShift;
+static bool exitChordSent, startPending, startWithShift, startWithMenu;
 static void requestEscape(void){
   if(exitChordSent)return;
   exitChordSent=true;
@@ -401,12 +423,17 @@ static void buttonEvent(int b,bool down){
     requestEscape();
     return;
   }
-  if(b==PPT_BTN_MENU)return;
+  if(b==PPT_BTN_MENU){
+    /* Also allow START -> MENU rather than requiring a specific key order. */
+    if(held[PPT_BTN_START] && startPending)startWithMenu=true;
+    return;
+  }
   if(b==PPT_BTN_START){
     /* Start on RELEASE. This allows a near-simultaneous L1+START chord
        to take precedence even if START was physically pressed first. */
     if(held[PPT_BTN_L1]){startPending=false;shoulderUsed[0]=true;requestEscape();}
-    else {startPending=true;startWithShift=held[PPT_BTN_SELECT];}
+    else {startPending=true;startWithShift=held[PPT_BTN_SELECT];
+          startWithMenu=held[PPT_BTN_MENU];}
     return;
   }
   if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
@@ -449,15 +476,18 @@ static void releaseButton(int b){
       editor.songPlaying && !ui.askBoxShown && !ui.editTextFlag);
   /* Execute START when released so L1+START cannot accidentally PLAY. */
   const bool doStart=(b==PPT_BTN_START && startPending && !exitChordSent && !held[PPT_BTN_L1] && !ui.askBoxShown);
-  const bool doSong=startWithShift;
+  /* MENU wins if both MENU and SELECT are held. */
+  const int transportMode=(startWithMenu || held[PPT_BTN_MENU])?PPT_PLAY_SONG:
+                          startWithShift?PPT_PLAY_PATTERN_ROW:PPT_PLAY_PATTERN;
   const bool doPattern=(b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
       !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
       !held[PPT_BTN_MENU] && !ui.askBoxShown;
   held[b]=false;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;if(doLive)toggleLiveEdit();}
-  if(b==PPT_BTN_START){startPending=false;exitChordSent=false;}
+  if(b==PPT_BTN_START){startPending=false;startWithShift=false;
+    startWithMenu=false;exitChordSent=false;}
   if(b==PPT_BTN_L1 || b==PPT_BTN_MENU)exitChordSent=false;
-  if(doStart)startPlayback(doSong);
+  if(doStart)startPlayback(transportMode);
   if(doPattern)changePattern(b==PPT_BTN_L1?-1:1);
   if(b==PPT_BTN_L1 || b==PPT_BTN_R1)shoulderUsed[b==PPT_BTN_R1]=false;
   const bool legacy=(ui.askBoxShown || ui.diskOpScreenShown || ui.editTextFlag);
@@ -504,7 +534,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.1 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.2 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -536,7 +566,8 @@ void ppt_input_close(void){
 }
 void ppt_input_update(void){
   if(!active)return;
-  if(!editor.songPlaying && liveEditEnabled){liveEditEnabled=false;logLiveEdit("AUTO_OFF");}
+  if(!editor.songPlaying && ppt_live_edit_active()){
+    atomic_store(&liveEditEnabled,false);logLiveEdit("AUTO_OFF");}
   struct input_event ev;
   for(int i=0;i<DEVICES;i++){
     if(fds[i]<0)continue;
@@ -555,7 +586,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.1 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.2 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -566,7 +597,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.1 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.2 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

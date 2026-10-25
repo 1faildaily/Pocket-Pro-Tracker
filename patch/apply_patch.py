@@ -86,7 +86,25 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.3.1: leave PT2's original renderer alone. The user prefers the
+# PPT v0.3.2: PT2's audio tick ordinarily copies playback ROW/PATTERN/POS
+# into the on-screen editor at each tick. Prevent that only during LIVE EDIT.
+# The Paula transport continues on song->row/modPattern/modPos independently.
+replayer=root/'src'/'pt2_replayer.c'
+assert replayer.exists(), f'Missing upstream PT2 replayer source: {replayer}'
+rs=replayer.read_text()
+if 'ppt_live_edit_active()' not in rs:
+    inc='#include "pt2_visuals_sync.h"'
+    assert rs.count(inc)==1, 'PT2 replayer include anchor changed'
+    rs=rs.replace(inc,inc+'\n#include "ppt_input.h"',1)
+    target='\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;'
+    assert rs.count(target)==1, 'PT2 UI sync anchor changed; do not patch audio transport blindly'
+    sync='\t/* PPT LIVE EDIT: do not chase the playhead in the editor. */\n\tif (ppt_live_edit_active())\n\t\treturn;\n\n'
+    rs=rs.replace(target,sync+target,1)
+    replayer.write_text(rs)
+else:
+    print('PT2 frozen editor/playhead already patched')
+
+# PPT v0.3.2: leave PT2's original renderer alone. The user prefers the
 # earlier full-screen stretch to letterbox/composite modes on 640x480 muOS.
 # Source patch only augments PT2's controller, note-audition and modal input.
-print('PPT v0.3.1 original PT2 fullscreen renderer retained')
+print('PPT v0.3.2 original PT2 fullscreen renderer retained')

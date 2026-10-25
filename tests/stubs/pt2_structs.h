@@ -4,9 +4,9 @@
 #include <stdbool.h>
 typedef struct {uint8_t param,sample,command;uint16_t period;} note_t;
 typedef struct {uint16_t patternTable[128];} header_t;
-typedef struct {unsigned int currPattern, currPos; int currRow; bool modified; header_t header; note_t *patterns[MAX_PATTERNS];} module_t;
+typedef struct {unsigned int currPattern, currPos; int currRow; int row; bool modified; header_t header; note_t *patterns[MAX_PATTERNS];} module_t;
 typedef struct {int8_t currSample;bool programRunning, songPlaying; int playMode,currMode,recordMode;} editor_t;
-typedef struct {bool updatePatternData, updateCurrSampleNum,updateSongPattern,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown;} ui_t;
+typedef struct {bool updatePatternData, updateCurrSampleNum,updateSongPattern,updateCurrPattText,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown;} ui_t;
 typedef struct {int pos,channel;} cursor_t;
 typedef struct {SDL_Window*window;}video_t;
 typedef struct {int x,y,rawX,rawY,absX,absY;} mouse_t;
