@@ -43,12 +43,39 @@ uint32_t askBox(uint32_t t, const char*s) {
 \t}
 }
 """)
+    edit=(base/'src'/'pt2_edit.c')
+    edit.write_text("""static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode)
+{
+    int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];
+    if (normalMode || editor.pNoteFlag != 0) { }
+}
+void handleEditKeys(SDL_Scancode scancode, bool normalMode)
+{
+    jamAndPlaceSample(scancode, normalMode);
+    jamAndPlaceSample(scancode, normalMode);
+}
+""")
     for _ in range(2): # idempotency after a second run
         subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(base)],check=True)
-    ms=main.read_text();asrc=ask.read_text()
+    ms=main.read_text();asrc=ask.read_text();editSrc=edit.read_text()
     assert ms.count('ppt_input_update();')==1
     assert asrc.count('ppt_input_update();')==1
     assert asrc.index('readMouseXY();')<asrc.index('ppt_input_update();')<asrc.index('SDL_PollEvent')
     assert '#include "ppt_input.h"' in asrc
+    assert editSrc.count('pptPreviewInsertedNote')==1
+    assert 'jamAndPlaceSample(SDL_SCANCODE_UNKNOWN, false, pitch, true)' in editSrc
+    assert editSrc.count('jamAndPlaceSample(scancode, normalMode, -1, false);')==2
     print('PT2 main/askBox patch anchors and idempotency OK')
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+w=Path('.github/workflows/build-ppt-arm64.yml').read_text()
+for x in ['VIDEOSCALE=1X','FULLSCREEN=TRUE','FULLSCREENSTRETCH=FALSE','INTEGERSCALING=TRUE','PIXELFILTER=NEAREST']:
+    assert x in w, x
+assert 'FULLSCREENSTRETCH=TRUE' not in w
+p=Path('patch/apply_patch.py').read_text()
+assert 'pptPreviewInsertedNote' in p
+assert 'jamAndPlaceSample' in p
+print('Pixel-perfect config and native note audition integration checked')
 PY

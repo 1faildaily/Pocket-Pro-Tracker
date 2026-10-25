@@ -1,39 +1,26 @@
-# Pocket Pro Tracker v0.2.3 — poprawka analogów i PLAY
+# Pocket Pro Tracker v0.2.5 – pixel-perfect, odsłuch nut, L1+MENU
 
-**To pakiet źródłowy dla GitHub Desktop i GitHub Actions, nie ZIP do bezpośredniej instalacji przez PortMaster.**
+To **SourceKit** do GitHub Desktop i GitHub Actions, nie gotowa paczka na konsolę. Bazuje na Twojej działającej integracji PT2 Clone 1.92.
 
-## Najważniejsze zmiany
+## Zmiany
 
-- **START → PLAY PATTERN** (to samo co przycisk PATTERN w oryginalnym PT2 Clone).
-- **SELECT (SHIFT) + START → PLAY SONG** (to samo co przycisk PLAY w oryginalnym PT2 Clone).
-- Zachowany dotychczasowy skrót **L1 + START → wyjście z programu** (UWAGA: bez automatycznego zapisu MOD).
-- **Prawy analog → ruch myszy X/Y:** na podstawie Twojego logu i układu osi Anbernica używamy `ABS_RY` (kod 4) dla X i `ABS_RZ` (kod 5) dla Y. Nie pobieramy już X z osi `ABS_RX` (kod 3), która u Ciebie pochodziła z pionowego ruchu lewego drążka. **Rzeczywistą oś kod 5 trzeba zweryfikować na konsoli.**
-- Nadal działają oryginalne funkcje PT2, sterowanie D-padem, wprowadzanie A/B, myszy R1+D-pad, R2/L2 i obsługa okien dialogowych z v0.2.2.
-- Zapamiętane kody przycisków z dostarczonego `controls.json` pozostają bez zmian.
+1. **Obraz:** poprawiono wymuszające zniekształcenie `FULLSCREENSTRETCH=TRUE` na `FALSE`, dodano `INTEGERSCALING=TRUE`, `PIXELFILTER=NEAREST` i `VIDEOSCALE=1X`. Oryginalny raster PT2 Clone ma 320×255. Przy ekranie 640×480 jedyna pełna skala całkowita to 1×, co może dać **duże czarne marginesy**. 2× (640×510) nie mieści całego UI. Ustawienie to traktuj jako test rzeczywistej ostrości, a nie kompromis wielkości. Zastosowanie INTEGERSCALING wymaga sprawdzenia w pełnoekranowym trybie SDL na RG35XX Pro. Jeśli ekran będzie za mały, można wrócić do poprzedniego trybu skalowania bez utraty innych zmian.
+2. **Odsłuch:** wstawienie nuty przyciskiem A w polu NOTE wywołuje autentyczną ścieżkę audio `jamAndPlaceSample()` z PT2 Clone, korzystając z tej samej próbki i wysokości. Odsłuch nie przesuwa ROW, nie wpisuje nuty drugi raz i nie odtwarza niezdefiniowanego sampla. Podczas trwającego PLAY nie uruchamia dodatkowej nuty, żeby nie zakłócać utworu.
+3. **L1 + M/MENU:** wywołuje oryginalną funkcję ESC/PT2 `REALLY QUIT?`. Kod fizycznego przycisku M przyjmujemy testowo jako `354`; nie ma go w `controls.json`, więc nie jest jeszcze potwierdzony na tej konsoli. muOS może przechwytywać go systemowo. **L1 + START zachowano awaryjnie** jako drogę wyjścia z potwierdzeniem na wypadek, gdyby M był niewidoczny.
+4. Pozostają START jako PLAY PATTERN/STOP, SELECT+START SONG od ROW, D-pad LSDJ, mysz pod lewym analogiem 70% wcześniejszej szybkości, tryb modalny A/B i obecne mapowanie przycisków.
 
 ## Instalacja przez GitHub Desktop
 
-1. Rozpakuj `PPT_v0.2.3_PT2_Analog_Play_SourceKit.zip` na komputerze.
-2. W GitHub Desktop wybierz **Repository → Show in Explorer** w repozytorium `Pocket-Pro-Tracker`.
-3. Skopiuj **zawartość paczki** do katalogu repozytorium, zachowując `.github/workflows`, `patch`, `port`, `tests`.
-4. Kliknij **Commit to main → Push origin**.
-5. Po ukończonej na zielono kompilacji w GitHub Actions pobierz **Artifacts**, rozpakuj pobrany ZIP.
-6. Do PortMaster `autoinstall` skopiuj **wewnętrzny** plik `pocket_pro_tracker_pt2.zip`, bez rozpakowywania tego wewnętrznego ZIP-a.
-7. Uruchom PPT. Sprawdź START, SELECT+START i ruch prawego drążka **osobno we wszystkich czterech kierunkach**.
+1. Rozpakuj ZIP i skopiuj **zawartość** (`.github`, `patch`, `port`, `tests`, `README_PL.md`) do katalogu swojego repozytorium `Pocket-Pro-Tracker`, zastępując stare pliki.
+2. GitHub Desktop → Summary: `PPT v0.2.5 - Pixel perfect, note preview and MENU exit`.
+3. Commit to main → Push origin.
+4. GitHub → Actions → po udanej kompilacji pobierz Artifact, rozpakuj zewnętrzne archiwum i wgraj wewnętrzny `pocket_pro_tracker_pt2.zip` do używanego katalogu `autoinstall` PortMastera.
 
-## Oczekiwane zachowanie i diagnostyka
+## Test na konsoli
 
-| Fizyczne sterowanie | Funkcja |
-|---|---|
-| START | PLAY PATTERN |
-| SELECT + START | PLAY SONG |
-| L1 + START | Zakończenie PPT, bez zapisu |
-| Prawy analog lewo/prawo | Mysz lewo/prawo |
-| Prawy analog góra/dół | Mysz góra/dół (oś 5, do weryfikacji) |
-| R1 + D-pad | Awaryjny ruch myszy |
-| R2 | Lewy klik myszy |
-| L2 | Prawy klik myszy |
+- Porównaj czcionki, przyciski, pionowe linie i krawędzie interfejsu. Sprawdź, czy cały UI jest widoczny; spodziewaj się **czarnych pasów** zamiast rozciągania.
+- Załaduj MOD z prawdziwymi samplami. Ustaw kursor na NOTE; wstaw nutę A i sprawdź odsłuch tej samej próbki i wysokości. Samplowi o zerowej długości nie będzie towarzyszył dźwięk.
+- Wciśnij **L1 + M**, najlepiej najpierw L1, potem M. Jeśli system przejmie M, użyj L1 + START jako bezpiecznej alternatywy.
+- Sprawdź START/STOP, SELECT+START i okna potwierdzenia.
 
-Jeśli w pionie prawy analog nadal nie działa, prześlij `ports/pocket_pro_tracker_pt2/ppt_input.log` po poruszeniu **tylko prawym analogiem** we wszystkich kierunkach. Kod zbiera próbki z osi 0..5, w tym ABS_RZ (5), co pozwoli potwierdzić ostateczne przypisanie.
-
-Nie można zagwarantować uruchomienia portu ani dźwięku na RG35XX Pro na podstawie testów lokalnych. Testy `bash tests/check.sh` weryfikują adapter i skrypt nakładający poprawkę, pełną kompilację PT2 ARM64 wykonuje GitHub Actions. Oryginalny PT2 Clone 1.92: 8bitbubsy, BSD-3-Clause.
+Testy automatyczne i kompilacja w lokalnym środowisku obejmują kod adaptera i testy mock, **nie pełną binarkę ARM64**. Pierwszą pełną kompilację PT2 i próbę na muOS wykonasz przez GitHub Actions i konsolę. W razie nieudanego builda przekaż log Actions.

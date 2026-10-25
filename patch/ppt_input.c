@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.3 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.5 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -30,12 +30,14 @@
 #define REPEAT_DELAY 85
 #define MOUSE_STEP 6
 #define MOUSE_DEADZONE 5500
+#define MOUSE_SPEED_NUM 7
+#define MOUSE_SPEED_DEN 10
 #define SCREEN_MOUSE_W 320
 #define SCREEN_MOUSE_H 255
-#define C_COUNT 10
+#define C_COUNT 11
 
-enum {PPT_BTN_SELECT, PPT_BTN_START, PPT_BTN_L1, PPT_BTN_L2, PPT_BTN_R1, PPT_BTN_R2, PPT_BTN_A, PPT_BTN_B, PPT_BTN_X, PPT_BTN_Y};
-static const int rawMap[C_COUNT] = {310, 311, 308, 314, 309, 315, 304, 305, 307, 306};
+enum {PPT_BTN_SELECT, PPT_BTN_START, PPT_BTN_L1, PPT_BTN_L2, PPT_BTN_R1, PPT_BTN_R2, PPT_BTN_A, PPT_BTN_B, PPT_BTN_X, PPT_BTN_Y, PPT_BTN_MENU};
+static const int rawMap[C_COUNT] = {310, 311, 308, 314, 309, 315, 304, 305, 307, 306, 354};
 static int fds[DEVICES];
 static bool held[C_COUNT], dir[4], dirRepeat[4];
 static uint32_t nextAt[4];
@@ -46,14 +48,15 @@ static uint8_t lastCmd=0, lastParam=0;
    with widely differing physical ranges. Never assume +/-32767. */
 static int clamp(int x,int lo,int hi);
 typedef struct {int min, max, value; bool valid, seen;} axis_t;
-/* The muOS device reports left-stick Y as ABS_RX (3) and right-stick X
-   as ABS_RY (4). The adjacent right-stick Y axis is ABS_RZ (5), following
-   the Anbernic layout; its physical behavior still needs console testing.
-   Index by Linux ABS_* axis number (0..5), not the assumed stick name. */
+/* muOS/RG35XX Pro: user confirmed left-stick vertical is ABS_RX (3).
+   Left-stick horizontal is mapped to ABS_Z (2) pending its on-device
+   verification. The old right-stick mouse axes 4/5 are deliberately ignored.
+   Index by evdev axis code, not conventional Linux stick names. */
 #define TRACKED_AXES 6
 static axis_t axis[TRACKED_AXES];
 static int mousePosX=160, mousePosY=127;
 static bool virtualMouse;
+static int mouseFracX, mouseFracY;
 static FILE *inputLog;
 static int logDirections, logAxes, logButtons;
 static int analogByDevice[DEVICES][TRACKED_AXES];
@@ -63,7 +66,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.3 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.2.5 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -97,14 +100,20 @@ static void applyVirtualMouse(void){
   setSpritePos(SPRITE_MOUSE_POINTER,mousePosX,mousePosY);
 }
 static void updateAnalogMouse(void){
-  /* RG35XX Pro / muOS: 3=left-stick vertical and 4=right-stick horizontal.
-     Old PPT mistakenly combined those two, making the pointer move sideways
-     with left up/down and vertically with right left/right.
-     Right stick X=ABS_RY (4), Y=ABS_RZ (5); do not fall back to left stick. */
-  const int x=axisAmount(ABS_RY), y=axisAmount(ABS_RZ);
-  int dx=0,dy=0;
-  if(abs(x)>MOUSE_DEADZONE)dx=(x<0?-1:1)*(1+abs(x)/9000);
-  if(abs(y)>MOUSE_DEADZONE)dy=(y<0?-1:1)*(1+abs(y)/9000);
+  /* Left stick ONLY. Axis 3 (ABS_RX) was confirmed as left up/down.
+     Axis 2 (ABS_Z) is the expected adjacent horizontal axis; if it is
+     different on this firmware, the new log records axes 0..5 for diagnosis.
+     Fractional accumulation gives a true 30% reduction even at low speeds. */
+  const int x=axisAmount(ABS_Z), y=axisAmount(ABS_RX);
+  const int moveX=abs(x)>MOUSE_DEADZONE ? (x<0?-1:1)*(1+abs(x)/9000) : 0;
+  const int moveY=abs(y)>MOUSE_DEADZONE ? (y<0?-1:1)*(1+abs(y)/9000) : 0;
+  if(!moveX)mouseFracX=0;
+  if(!moveY)mouseFracY=0;
+  mouseFracX+=moveX*MOUSE_SPEED_NUM;
+  mouseFracY+=moveY*MOUSE_SPEED_NUM;
+  int dx=mouseFracX/MOUSE_SPEED_DEN, dy=mouseFracY/MOUSE_SPEED_DEN;
+  mouseFracX-=dx*MOUSE_SPEED_DEN;
+  mouseFracY-=dy*MOUSE_SPEED_DEN;
   moveVirtualMouse(dx,dy);
 }
 static void processHatAxis(unsigned code,int value);
@@ -128,6 +137,8 @@ static note_t *currentNote(void){
   if(!song || song->currPattern>=MAX_PATTERNS || !song->patterns[song->currPattern])return NULL;
   return &song->patterns[song->currPattern][(int)song->currRow*PAULA_VOICES + (int)cursor.channel];
 }
+/* Use the SAME native PT2 Paula audition path as typing a note on keyboard. */
+extern void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex);
 static void changed(void){
   if(!song)return;
   song->modified=true;
@@ -178,6 +189,9 @@ static void insert(void){
     case CURSOR_NOTE:
       if(!n->period)n->period=periods[lastPitch];
       if(!n->sample)n->sample=(uint8_t)lastSample;
+      /* Same note and (possibly existing) sample as the inserted cell. */
+      if(n->sample >= 1 && n->sample <= 31)
+        pptPreviewInsertedNote((int8_t)pitchOf(n->period), (int8_t)(n->sample-1));
       break;
     case CURSOR_SAMPLE1:
     case CURSOR_SAMPLE2: if(!n->sample)n->sample=(uint8_t)lastSample;break;
@@ -216,14 +230,21 @@ static void pasteField(void){
   else n->param=clipboard.param;
   changed();
 }
-/* START plays the pattern, while physical SELECT (our SHIFT) + START
-   plays the whole song. Calls intentionally match original GUI buttons
-   PTB_PATTERN and PTB_PLAY in pt2_mouse.c (PT2 clone v1.92). */
-static void startPlayback(bool wholeSong){
+/* Playback actions use the original PT2 replayer, preserving MOD semantics.
+   START = PLAY PATTERN, or STOP if anything is already playing.
+   SELECT (physical SHIFT)+START = PLAY SONG from current order AND ROW. */
+static void startPlayback(bool songFromRow){
   if(!song || ui.askBoxShown || ui.editTextFlag)return;
-  if(wholeSong){
+  if(editor.songPlaying){
+    modStop();
+    editor.currMode=MODE_IDLE;
+    pointerSetMode(POINTER_MODE_IDLE,DO_CARRY);
+    statusAllRight();
+    return;
+  }
+  if(songFromRow){
     editor.playMode=PLAY_MODE_NORMAL;
-    modPlay(DONT_SET_PATTERN,song->currPos,DONT_SET_ROW);
+    modPlay(DONT_SET_PATTERN,song->currPos,(int8_t)song->currRow);
   }else{
     editor.playMode=PLAY_MODE_PATTERN;
     modPlay(song->currPattern,DONT_SET_ORDER,DONT_SET_ROW);
@@ -231,6 +252,19 @@ static void startPlayback(bool wholeSong){
   editor.currMode=MODE_PLAY;
   pointerSetMode(POINTER_MODE_PLAY,DO_CARRY);
   statusAllRight();
+}
+/* Dispatch the real Escape key to PT2's existing keyboard handler. In the
+   main view this opens REALLY QUIT ?, from subviews it navigates back.
+   Never force editor.programRunning=false and never bypass the confirmation. */
+static bool exitChordSent, startPending, startWithShift;
+static void requestEscape(void){
+  if(exitChordSent)return;
+  exitChordSent=true;
+  SDL_Event e;memset(&e,0,sizeof(e));
+  e.type=SDL_KEYDOWN;e.key.state=SDL_PRESSED;
+  e.key.keysym.sym=SDLK_ESCAPE;
+  e.key.keysym.scancode=SDL_SCANCODE_ESCAPE;
+  SDL_PushEvent(&e);
 }
 /* PT2 has an independent SDL loop for its modal confirmation dialogs.
    Push standard key events so every askBox can be operated even without a mouse.
@@ -254,9 +288,25 @@ static void buttonEvent(int b,bool down){
     /* Do not accidentally start playback through a confirmation dialog. */
     if(b!=PPT_BTN_R2 && b!=PPT_BTN_L2)return;
   }
+  /* Physical M/MENU (raw KEY 354 on related muOS devices) + L1:
+     native ESC / REALLY QUIT confirmation. Keep L1+START as fallback on
+     firmware that swallows MENU at system level. */
+  if((b==PPT_BTN_MENU && held[PPT_BTN_L1]) ||
+     (b==PPT_BTN_L1 && held[PPT_BTN_MENU])){
+    requestEscape();
+    return;
+  }
+  if(b==PPT_BTN_MENU)return;
   if(b==PPT_BTN_START){
-    if(held[PPT_BTN_L1])editor.programRunning=false; /* existing exit shortcut */
-    else startPlayback(held[PPT_BTN_SELECT]);
+    /* Start on RELEASE. This allows a near-simultaneous L1+START chord
+       to take precedence even if START was physically pressed first. */
+    if(held[PPT_BTN_L1]){startPending=false;requestEscape();}
+    else {startPending=true;startWithShift=held[PPT_BTN_SELECT];}
+    return;
+  }
+  if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
+    startPending=false;
+    requestEscape();
     return;
   }
   if(b==PPT_BTN_A){
@@ -267,8 +317,6 @@ static void buttonEvent(int b,bool down){
     if(held[PPT_BTN_SELECT])copyField();
     else if(held[PPT_BTN_A]){copyField();erase();}
     else copyField();
-  }else if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
-    editor.programRunning=false;
   }
   /* R2/L2 mouse buttons handled below as SDL events. */
   if((b==PPT_BTN_R2 || b==PPT_BTN_L2) && video.window){
@@ -279,7 +327,13 @@ static void buttonEvent(int b,bool down){
 }
 static void releaseButton(int b){
   if(b<0||b>=C_COUNT || !held[b])return;
+  /* Execute START when released so L1+START cannot accidentally PLAY. */
+  const bool doStart=(b==PPT_BTN_START && startPending && !exitChordSent && !held[PPT_BTN_L1] && !ui.askBoxShown);
+  const bool doSong=startWithShift;
   held[b]=false;
+  if(b==PPT_BTN_START){startPending=false;exitChordSent=false;}
+  if(b==PPT_BTN_L1 || b==PPT_BTN_MENU)exitChordSent=false;
+  if(doStart)startPlayback(doSong);
   if((b==PPT_BTN_R2 || b==PPT_BTN_L2) && video.window){
     SDL_Event evt;memset(&evt,0,sizeof(evt));
     evt.type=SDL_MOUSEBUTTONUP;evt.button.button=(b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
@@ -319,7 +373,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.3 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.2.5 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -374,7 +428,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.2.3 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.2.5 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

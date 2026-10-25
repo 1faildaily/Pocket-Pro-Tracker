@@ -41,3 +41,46 @@ else:
     print('PT2 askBox loop already patched')
 
 print('Patched PT2 v1.92: main and modal loops updated, original GUI/audio retained')
+
+
+# The keyboard note-preview path already runs through PT2's real Paula mixer.
+# Reuse it rather than implementing a second (possibly inaccurate) audio engine.
+# Previewing must not modify the pattern or advance a row.
+edit=root/'src'/'pt2_edit.c'
+assert edit.exists(), f'Missing upstream PT2 edit source: {edit}'
+es=edit.read_text()
+if 'pptPreviewInsertedNote' not in es:
+    def once(old,new):
+        global es
+        assert es.count(old)==1, f'PT2 edit anchor changed ({old[:65]!r}): {es.count(old)}'
+        es=es.replace(old,new,1)
+    once('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode)',
+         'static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode, int8_t forcedNote, bool previewOnly)')
+    once('int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];',
+         'int8_t noteVal = forcedNote >= 0 ? forcedNote : (normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample]);')
+    once('if (normalMode || editor.pNoteFlag != 0)',
+         'if (!previewOnly && (normalMode || editor.pNoteFlag != 0))')
+    assert es.count('jamAndPlaceSample(scancode, normalMode);')==2
+    es=es.replace('jamAndPlaceSample(scancode, normalMode);',
+                  'jamAndPlaceSample(scancode, normalMode, -1, false);')
+    anchor='\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode)'
+    assert anchor in es, 'PT2 edit insertion anchor changed'
+    preview=r'''
+/* PPT v0.2.5: Preview notes entered from the pad through the original
+ * jamAndPlaceSample() Paula/audio path. Do not edit a pattern or advance ROW. */
+void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex)
+{
+    if (song == NULL || pitch < 0 || pitch >= 36 || sampleIndex < 0 || sampleIndex >= MOD_SAMPLES)
+        return;
+    if (editor.songPlaying || song->samples[sampleIndex].length <= 2)
+        return;
+    const int8_t savedSample = editor.currSample;
+    editor.currSample = sampleIndex;
+    jamAndPlaceSample(SDL_SCANCODE_UNKNOWN, false, pitch, true);
+    editor.currSample = savedSample;
+}
+'''
+    es=es.replace(anchor, '\n'+preview+anchor,1)
+    edit.write_text(es)
+else:
+    print('PT2 native sample audition already patched')
