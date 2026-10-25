@@ -87,6 +87,13 @@ bool setupVideo(void) {
 \tint32_t screenH = SCREEN_H * config.videoScaleFactor;
 }
 """)
+    # Simulate harmless source format/comment drift that broke v0.2.9.
+    vis=base/'src'/'pt2_visuals.c'
+    original=vis.read_text()
+    original=original.replace('\t// SDL 2.0.14 bug on Windows (?): This function consumes ever-increasing memory if the program is minimized',
+        '\t// SDL 2.0.14 bug on Windows (?): memory grows when minimized\n\t// Additional upstream comment')
+    original=original.replace('\tif (video.useCustomRenderRect)', '    if (video.useCustomRenderRect)')
+    vis.write_text(original)
     for _ in range(2): # idempotency after a second run
         subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(base)],check=True)
     ms=main.read_text();asrc=ask.read_text();editSrc=edit.read_text()

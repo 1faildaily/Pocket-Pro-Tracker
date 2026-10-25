@@ -1,26 +1,14 @@
-# Pocket Pro Tracker v0.2.9 – natywna kompozycja obrazu 640×480
+# Pocket Pro Tracker v0.2.9b – naprawa błędu GitHub Actions
 
-**To SourceKit do GitHub Desktop, a nie gotowa binarka dla PortMastera.**
+Naprawia `AssertionError: PT2 flipFrame presentation anchor changed` w skrypcie `patch/apply_patch.py` z v0.2.9. Przyczyną było porównywanie całego fragmentu oryginalnego PT2 co do znaku (włączając białe znaki/komentarze). Nowy skrypt odnajduje blok między `SDL_UpdateTexture` i `SDL_RenderPresent` wyłącznie wewnątrz `flipFrame`, sprawdza jego strukturę, a następnie go zastępuje. Nie wyłącza kontroli poprawności zmian.
 
-## Co ustaliliśmy z prawdziwego `ppt_video.log`
+## GitHub Desktop
 
-v0.2.8 poprawnie liczy prostokąt 19,0,602,480 na ekranie 640×480. Skoro fizyczny ekran nadal miał czarne pasy również u góry i u dołu, samo dalsze poprawianie prostokąta nic nie da.
+Rozpakuj zawartość tego ZIP-a **do katalogu głównego dotychczasowego repozytorium**, nadpisując wszystkie pliki z paczki. Następnie wpisz w Summary: `PPT v0.2.9b - Fix flipFrame patch matching`; Commit to main → Push origin. Po zielonym GitHub Actions pobierz jego artefakt i rozpakuj wewnętrzny ZIP do PortMaster `autoinstall`.
 
-## Co zmienia v0.2.9
+## Zakres
 
-Zamiast ponownie polegać na końcowym skalowaniu w SDL, kod wypełnia pełną **klatkę ARGB8888 640×480** w pamięci RAM. W tej klatce renderuje obraz 320×255 w proporcjach zachowanych jako **602×480**, czarny zostaje tylko lewy i prawy margines po 19 pikseli. SDL otrzymuje już gotową teksturę **640×480**, którą wyświetla 1:1, bez drugiego prostokąta skalującego. Podczas renderowania wyłączamy SDL logical scaling i dodatkowy viewport.
-
-Przy zachowaniu pełnego obrazu ProTrackera i wysokości 480 mamy skalę niecałkowitą (około 1,882), więc najmniejsze piksele obrazu mogą mieć różną szerokość. To jest matematyczne ograniczenie, a nie błąd. Nie ma już jednak powodu, żeby pojawiały się poziome czarne pasy generowane przez nasz kod.
-
-**Nie zmieniamy** mapowania przycisków, obsługi okien dialogowych, myszki na lewym analogu, tempa myszki, odtwarzania, sampli ani odsłuchu nut. Jeśli mimo tego wyświetli się czarny margines u góry/dołu, potrzebne będą pomiary podsystemu ekranu muOS lub zdjęcie aktualnej wersji.
-
-## Kompilacja
-
-1. Rozpakuj i skopiuj całą zawartość do swojego repozytorium w GitHub Desktop, zastępując stare pliki.
-2. **Summary:** `PPT v0.2.9 - Native 640x480 composed video output`.
-3. **Commit to main**, następnie **Push origin**.
-4. Po zielonym Actions pobierz artefakt, rozpakuj ZIP artefaktu i wewnętrzny `pocket_pro_tracker_pt2.zip` wgraj do katalogu autoinstall PortMastera.
-5. Zachowaj poprzednią paczkę jako kopię zapasową.
+To **SourceKit**, a nie program gotowy do uruchomienia. Zachowano v0.2.9 natywną kompozycję obrazu 640×480, aktualne sterowanie i audio. Testy obejmują także warianty oryginalnego bloku renderowania z innym formatowaniem. Ostateczne działanie na fizycznym RG35XX Pro wymaga sprawdzenia.
 
 ## Jak sprawdzić
 

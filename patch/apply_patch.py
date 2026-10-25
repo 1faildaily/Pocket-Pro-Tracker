@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Add Pocket Pro Tracker input adapter without replacing PT2 v1.92 graphics/audio."""
-import sys, pathlib, shutil
+import sys, pathlib, shutil, re
 root=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
 main=root/'src'/'pt2_main.c'
 assert main.exists(), f'Not a ProTracker 2 source directory: {root}'
@@ -284,31 +284,44 @@ static bool pptPresentFinalFrame(void)
     anchor = 'void flipFrame(void)\n{'
     assert vs.count(anchor) == 1, 'PT2 flipFrame anchor changed'
     vs=vs.replace(anchor,code+'\n'+anchor,1)
-    old='''\tSDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
-
-	// SDL 2.0.14 bug on Windows (?): This function consumes ever-increasing memory if the program is minimized
-	if (!minimized)
-		SDL_RenderClear(video.renderer);
-	if (video.useCustomRenderRect)
-		SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
-	else
-		SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
-
-	SDL_RenderPresent(video.renderer);'''
-    new='''\tif (!pptPresentFinalFrame())
-	{
-		/* Fallback if stage allocation fails or fullscreen is off. */
-		SDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
-		if (!minimized) SDL_RenderClear(video.renderer);
-		if (video.useCustomRenderRect)
-			SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
-		else
-			SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
-		SDL_RenderPresent(video.renderer);
-	}'''
-    assert vs.count(old)==1, 'PT2 flipFrame presentation anchor changed'
-    vs=vs.replace(old,new,1)
+    # Find only the presentation section inside PT2 v1.92 flipFrame().
+    # Previous v0.2.9 required an EXACT multiline match, and failed when
+    # comments/indentation differed. Preserve the surrounding sprite/audio sync.
+    flip_start = vs.index('void flipFrame(void)\n{')
+    match = re.search(r'(?m)^}', vs[flip_start:])
+    if match is None:
+        raise RuntimeError('Cannot find the end of PT2 flipFrame')
+    flip_end = flip_start + match.start()
+    flip_body = vs[flip_start:flip_end]
+    begin = re.search(r'(?m)^[ \t]*SDL_UpdateTexture\(video\.texture,', flip_body)
+    end = re.search(r'(?m)^[ \t]*SDL_RenderPresent\(video\.renderer\);', flip_body)
+    if begin is None or end is None or begin.start() >= end.end():
+        raise RuntimeError('Cannot locate original PT2 flipFrame texture-to-present block')
+    old = flip_body[begin.start():end.end()]
+    # Safety: require a recognizable ORIGINAL PT2 path, not an unrelated block.
+    required = (
+        'SDL_UpdateTexture(video.texture',
+        'SDL_RenderClear(video.renderer)',
+        'SDL_RenderCopy(video.renderer, video.texture',
+        'SDL_RenderPresent(video.renderer)',
+    )
+    missing = [x for x in required if x not in old]
+    if missing or old.count('SDL_RenderPresent(video.renderer)') != 1:
+        raise RuntimeError(f'Unexpected flipFrame presentation code: missing {missing}')
+    new = '''    if (!pptPresentFinalFrame())
+    {
+        /* Fallback if final-frame composition is unavailable. */
+        SDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
+        if (!minimized) SDL_RenderClear(video.renderer);
+        if (video.useCustomRenderRect)
+            SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
+        else
+            SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
+        SDL_RenderPresent(video.renderer);
+    }'''
+    flip_body = flip_body[:begin.start()] + new + flip_body[end.end():]
+    vs = vs[:flip_start] + flip_body + vs[flip_end:]
     visuals.write_text(vs)
 else:
     print('PPT v0.2.9 composed output already installed')
-print('PPT v0.2.9 final compose patch applied')
+print('PPT v0.2.9b final compose patch applied (resilient flipFrame matching)')
