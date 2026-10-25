@@ -86,45 +86,111 @@ else:
     print('PT2 native sample audition already patched')
 
 
-# PPT v0.2.6: Upstream PT2 1.92 hard-codes integer fullscreen scaling in
-# updateRenderSizeVars(), even when INTEGERSCALING=FALSE is configured.
-# Replace the destination rectangle algorithm, preserving the original SDL
-# renderer, source texture, drawing methods, and mouse coordinate handling.
-visuals=root/'src'/'pt2_visuals.c'
+# PPT v0.2.8: on RG35XX Pro create a native 640x480 SDL window, then use
+# the actual SDL renderer output (not OpenGL drawable size) to compute the
+# destination rectangle. Avoid nested 320x255 -> 640x480 compositor scaling.
+mainSrc = main.read_text()
+forced = '/* PPT v0.2.8: RG35XX Pro native fullscreen output. */'
+if forced not in mainSrc:
+    anchor = '\tloadConfig();'
+    assert mainSrc.count(anchor) == 1, 'PT2 main loadConfig anchor changed'
+    override = '\n'.join([
+        '\t' + forced,
+        '\tconfig.autoFitVideoScale = false;',
+        '\tconfig.videoScaleFactor = 1;',
+        '\tconfig.startInFullscreen = true;',
+        '\tconfig.fullScreenStretch = false;',
+        '\tconfig.integerScaling = false;',
+        '\tconfig.pixelFilter = PIXELFILTER_NEAREST;',
+    ])
+    mainSrc = mainSrc.replace(anchor, anchor + '\n' + override, 1)
+    main.write_text(mainSrc)
+
+visuals = root / 'src' / 'pt2_visuals.c'
 assert visuals.exists(), f'Missing PT2 video source: {visuals}'
-vs=visuals.read_text()
-marker='/* PPT v0.2.6: fullscreen aspect-fit on 640x480. */'
+vs = visuals.read_text()
+marker = '/* PPT v0.2.8: native SDL window and renderer coordinates. */'
 if marker not in vs:
-    anchor=(
-        '\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);\n'
-        '\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;\n'
-        '\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;'
-    )
-    replacement=(
-        '\t\t\t'+marker+'\n'
-        '\t\t\tif (config.integerScaling)\n'
-        '\t\t\t{\n'
-        '\t\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);\n'
-        '\t\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;\n'
-        '\t\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;\n'
-        '\t\t\t}\n'
-        '\t\t\telse\n'
-        '\t\t\t{\n'
-        '\t\t\t\t/* Fit 320x255 onto 640x480 as 602x480, with 19px sidebars. */\n'
-        '\t\t\t\tif ((int64_t)video.windowW * SCREEN_H >= (int64_t)video.windowH * SCREEN_W)\n'
-        '\t\t\t\t{\n'
-        '\t\t\t\t\tvideo.renderH = video.windowH;\n'
-        '\t\t\t\t\tvideo.renderW = (int32_t)((int64_t)video.windowH * SCREEN_W / SCREEN_H);\n'
-        '\t\t\t\t}\n'
-        '\t\t\t\telse\n'
-        '\t\t\t\t{\n'
-        '\t\t\t\t\tvideo.renderW = video.windowW;\n'
-        '\t\t\t\t\tvideo.renderH = (int32_t)((int64_t)video.windowW * SCREEN_H / SCREEN_W);\n'
-        '\t\t\t\t}\n'
-        '\t\t\t}'
-    )
-    assert vs.count(anchor)==1, f'PT2 1.92 fullscreen scaling anchor changed: {vs.count(anchor)}'
-    vs=vs.replace(anchor,replacement,1)
+    anchor = '\tint32_t screenW = SCREEN_W * config.videoScaleFactor;\n\tint32_t screenH = SCREEN_H * config.videoScaleFactor;'
+    replacement = anchor + '\n\t' + marker + '''
+\tif (config.startInFullscreen)
+\t{
+\t\tscreenW = 640;
+\t\tscreenH = 480;
+\t}'''
+    assert vs.count(anchor) == 1, 'PT2 setupVideo window size anchor changed'
+    vs = vs.replace(anchor, replacement, 1)
+
+    anchor = '\tSDL_GetWindowSize(video.window, &video.windowW, &video.windowH);'
+    replacement = anchor + '''
+\t/* SDL renderer output may differ from the window on KMSDRM. */
+\tint32_t pptOutputW = 0, pptOutputH = 0;
+\tif (SDL_GetRendererOutputSize(video.renderer, &pptOutputW, &pptOutputH) != 0 ||
+\t    pptOutputW <= 0 || pptOutputH <= 0)
+\t{
+\t\tpptOutputW = video.windowW;
+\t\tpptOutputH = video.windowH;
+\t}
+\tif (video.fullscreen)
+\t{
+\t\tvideo.windowW = pptOutputW;
+\t\tvideo.windowH = pptOutputH;
+\t}'''
+    assert vs.count(anchor) == 1, 'PT2 updateRenderSizeVars window-size anchor changed'
+    vs = vs.replace(anchor, replacement, 1)
+
+    anchor = '''\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);
+\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;
+\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;'''
+    replacement = '''\t\t\t/* Preserve aspect ratio while filling the renderer output height. */
+\t\t\tif (config.integerScaling)
+\t\t\t{
+\t\t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);
+\t\t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;
+\t\t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;
+\t\t\t}
+\t\t\telse if ((int64_t)video.windowW * SCREEN_H >= (int64_t)video.windowH * SCREEN_W)
+\t\t\t{
+\t\t\t\tvideo.renderH = video.windowH;
+\t\t\t\tvideo.renderW = (int32_t)((int64_t)video.windowH * SCREEN_W / SCREEN_H);
+\t\t\t}
+\t\t\telse
+\t\t\t{
+\t\t\t\tvideo.renderW = video.windowW;
+\t\t\t\tvideo.renderH = (int32_t)((int64_t)video.windowW * SCREEN_H / SCREEN_W);
+\t\t\t}'''
+    assert vs.count(anchor) == 1, 'PT2 fullscreen integer scaling anchor changed'
+    vs = vs.replace(anchor, replacement, 1)
+
+    anchor = '\t\t\tSDL_GL_GetDrawableSize(video.window, &widthInPixels, &heightInPixels);'
+    replacement = '\t\t\twidthInPixels = pptOutputW;\n\t\t\theightInPixels = pptOutputH;'
+    assert vs.count(anchor) == 1, 'PT2 OpenGL drawable size anchor changed'
+    vs = vs.replace(anchor, replacement, 1)
+
+    # A new log reports how SDL actually describes fullscreen on the device.
+    anchor = '\t// "hardware mouse" calculations'
+    log = '''\t/* PPT v0.2.8: collect real SDL dimensions to diagnose letterboxing. */
+\tconst char *pptVideoLog = getenv("PPT_VIDEO_DIAG_LOG");
+\tif (pptVideoLog != NULL && *pptVideoLog != '\\0')
+\t{
+\t\tFILE *pptFile = fopen(pptVideoLog, "a");
+\t\tif (pptFile != NULL)
+\t\t{
+\t\t\tfprintf(pptFile,
+\t\t\t\t"PPT VIDEO v0.2.8 fullscreen=%d output=%dx%d target=%d,%d,%d,%d window=%dx%d\\n",
+\t\t\t\t(int)video.fullscreen, pptOutputW, pptOutputH,
+\t\t\t\tvideo.renderRect.x, video.renderRect.y,
+\t\t\t\tvideo.renderRect.w, video.renderRect.h,
+\t\t\t\tvideo.windowW, video.windowH);
+\t\t\tfclose(pptFile);
+\t\t}
+\t}
+'''
+    assert vs.count(anchor) == 1, 'PT2 hardware mouse anchor changed'
+    vs = vs.replace(anchor, log + anchor, 1)
+    if '#include <stdlib.h>' not in vs:
+        vs = vs.replace('#include <stdio.h>', '#include <stdio.h>\n#include <stdlib.h>', 1)
     visuals.write_text(vs)
 else:
-    print('PT2 aspect-fit patch already applied')
+    print('PPT v0.2.8 native SDL scaling patch already installed')
+print('PPT v0.2.8 output-size patch applied')

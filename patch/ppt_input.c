@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.2.6 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.8 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -23,6 +23,7 @@
 #include "pt2_structs.h"
 #include "pt2_visuals.h"
 #include "pt2_replayer.h"
+#include "pt2_helpers.h"
 #include "ppt_input.h"
 
 #define DEVICES 16
@@ -42,8 +43,9 @@ static int fds[DEVICES];
 static bool held[C_COUNT], dir[4], dirRepeat[4];
 static uint32_t nextAt[4];
 static int lastPitch=24; /* C-3, original PT2 uses C-1..B-3 */
-static int lastSample=1; /* MOD sample number, one-based */
 static uint8_t lastCmd=0, lastParam=0;
+/* L1/R1 act on release, so a chord never switches patterns unintentionally. */
+static bool shoulderUsed[2];
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
 static int clamp(int x,int lo,int hi);
@@ -63,7 +65,7 @@ static int analogByDevice[DEVICES][TRACKED_AXES];
 /* The MENU/M button may use a non-standard evdev code on muOS.
    If the firmware consumes the key before evdev we cannot receive it. */
 static bool menuRawCode(unsigned code){
-  return code==354 || code==KEY_MENU || code==BTN_MODE;
+  return code==312 || code==354 || code==KEY_MENU || code==BTN_MODE;
 }
 static void diagnostic(const char *kind,int code,int value){
   if(!inputLog)return;
@@ -71,7 +73,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.2.6 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.2.8 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -143,7 +145,6 @@ static note_t *currentNote(void){
   return &song->patterns[song->currPattern][(int)song->currRow*PAULA_VOICES + (int)cursor.channel];
 }
 /* Use the SAME native PT2 Paula audition path as typing a note on keyboard. */
-extern void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex);
 static void changed(void){
   if(!song)return;
   song->modified=true;
@@ -160,6 +161,34 @@ static void navigate(int d){
   ui.updatePatternData=true;
   updateCursorPos();
 }
+extern void pptPreviewInsertedNote(int8_t pitch, int8_t sampleIndex);
+/* L1/R1 match PT2's PATTERN number arrows at the current song order.
+   This changes the order-table pattern assignment, but never modifies any
+   pattern note data. Bounds match the original PT2 buttons (00..99). */
+static void changePattern(int step){
+  if(!song || editor.songPlaying || ui.askBoxShown || ui.editTextFlag ||
+     ui.diskOpScreenShown || ui.samplerScreenShown)return;
+  if(song->currPos>=128)return;
+  const int current=song->header.patternTable[song->currPos];
+  const int next=clamp(current+step,0,MAX_PATTERNS-1);
+  if(next==current)return;
+  song->header.patternTable[song->currPos]=(uint16_t)next;
+  setPattern((int16_t)next);
+  ui.updateSongPattern=true;
+  ui.updatePatternData=true;
+  updateWindowTitle(true);
+}
+/* Use PT2's own sample change functions, which also update the sample info. */
+static void changeActiveSample(int step){
+  if(!song || ui.askBoxShown || ui.editTextFlag || ui.diskOpScreenShown)return;
+  if(step<0) sampleDownButton();
+  else sampleUpButton();
+}
+static void previewNote(const note_t *n){
+  if(!n || !n->period)return;
+  const int sample=(n->sample>=1 && n->sample<=31)?n->sample-1:clamp(editor.currSample,0,30);
+  pptPreviewInsertedNote((int8_t)pitchOf(n->period),(int8_t)sample);
+}
 static void edit(int d){
   if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
   note_t *n=currentNote();if(!n)return;
@@ -168,15 +197,18 @@ static void edit(int d){
     case CURSOR_NOTE: {
       int next=clamp(pitchOf(n->period)+delta,0,35);
       lastPitch=next;n->period=periods[next];
-      if(n->sample==0)n->sample=(uint8_t)lastSample;
+      /* Pitch remembered, sample number never cached by the adapter. */
+      previewNote(n);
     }break;
     case CURSOR_SAMPLE1:
     case CURSOR_SAMPLE2: {
       int step=(d<2)?16:1;
       int sign=(d==0 || d==2)?-1:1;
-      lastSample=clamp((n->sample?n->sample:lastSample)+sign*step,1,31);
-      n->sample=(uint8_t)lastSample;
-      editor.currSample=(int8_t)(lastSample-1);
+      const int selected=clamp(editor.currSample+1,1,31);
+      const int num=clamp((n->sample?n->sample:selected)+sign*step,1,31);
+      n->sample=(uint8_t)num;
+      editor.currSample=(int8_t)(num-1);
+      updateCurrSample();
     }break;
     case CURSOR_CMD:
       lastCmd=(uint8_t)wrap((int)n->command+((d<2)?(d==0?-4:4):(d==2?-1:1)),16);
@@ -193,13 +225,12 @@ static void insert(void){
   switch(cursor.pos%6){
     case CURSOR_NOTE:
       if(!n->period)n->period=periods[lastPitch];
-      if(!n->sample)n->sample=(uint8_t)lastSample;
+      if(!n->sample)n->sample=(uint8_t)(clamp(editor.currSample,0,30)+1);
       /* Same note and (possibly existing) sample as the inserted cell. */
-      if(n->sample >= 1 && n->sample <= 31)
-        pptPreviewInsertedNote((int8_t)pitchOf(n->period), (int8_t)(n->sample-1));
+      previewNote(n);
       break;
     case CURSOR_SAMPLE1:
-    case CURSOR_SAMPLE2: if(!n->sample)n->sample=(uint8_t)lastSample;break;
+    case CURSOR_SAMPLE2: if(!n->sample)n->sample=(uint8_t)(clamp(editor.currSample,0,30)+1);break;
     case CURSOR_CMD: n->command=lastCmd;break;
     case CURSOR_PARAM1:
     case CURSOR_PARAM2: n->param=lastParam;break;
@@ -290,14 +321,15 @@ static void buttonEvent(int b,bool down){
   if(ui.askBoxShown){
     if(b==PPT_BTN_A){modalKey(SDLK_RETURN);return;}
     if(b==PPT_BTN_B){modalKey(SDLK_ESCAPE);return;}
-    /* Do not accidentally start playback through a confirmation dialog. */
-    if(b!=PPT_BTN_R2 && b!=PPT_BTN_L2)return;
+    /* Keep left/right clicks (including legacy L2/R2) in native modals. */
+    if(b!=PPT_BTN_R2 && b!=PPT_BTN_L2 && b!=PPT_BTN_X && b!=PPT_BTN_Y)return;
   }
-  /* Physical M/MENU (raw KEY 354 on related muOS devices) + L1:
+  /* Physical M/MENU (raw 312 confirmed on RG35XX Pro) + L1:
      native ESC / REALLY QUIT confirmation. Keep L1+START as fallback on
      firmware that swallows MENU at system level. */
   if((b==PPT_BTN_MENU && held[PPT_BTN_L1]) ||
      (b==PPT_BTN_L1 && held[PPT_BTN_MENU])){
+    shoulderUsed[0]=true;
     requestEscape();
     return;
   }
@@ -305,13 +337,21 @@ static void buttonEvent(int b,bool down){
   if(b==PPT_BTN_START){
     /* Start on RELEASE. This allows a near-simultaneous L1+START chord
        to take precedence even if START was physically pressed first. */
-    if(held[PPT_BTN_L1]){startPending=false;requestEscape();}
+    if(held[PPT_BTN_L1]){startPending=false;shoulderUsed[0]=true;requestEscape();}
     else {startPending=true;startWithShift=held[PPT_BTN_SELECT];}
     return;
   }
   if(b==PPT_BTN_L1 && held[PPT_BTN_START]){
     startPending=false;
+    shoulderUsed[0]=true;
     requestEscape();
+    return;
+  }
+  if(b==PPT_BTN_L1){shoulderUsed[0]=false;return;}
+  if(b==PPT_BTN_R1){shoulderUsed[1]=false;return;}
+  if((b==PPT_BTN_L2 || b==PPT_BTN_R2) && !ui.askBoxShown &&
+     !ui.diskOpScreenShown && !ui.editTextFlag){
+    changeActiveSample(b==PPT_BTN_L2?-1:1);
     return;
   }
   if(b==PPT_BTN_A){
@@ -323,11 +363,15 @@ static void buttonEvent(int b,bool down){
     else if(held[PPT_BTN_A]){copyField();erase();}
     else copyField();
   }
-  /* R2/L2 mouse buttons handled below as SDL events. */
-  if((b==PPT_BTN_R2 || b==PPT_BTN_L2) && video.window){
+  /* X/Y are the reliable mouse clicks in all screens; legacy L2/R2
+     clicks are kept while an askBox or disk operation screen is open. */
+  const bool legacy=(ui.askBoxShown || ui.diskOpScreenShown || ui.editTextFlag);
+  if(video.window && (b==PPT_BTN_X || b==PPT_BTN_Y ||
+     (legacy && (b==PPT_BTN_R2 || b==PPT_BTN_L2)))){
     SDL_Event evt;memset(&evt,0,sizeof(evt));
-    evt.type=SDL_MOUSEBUTTONDOWN;evt.button.button=(b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
-    evt.button.state=SDL_PRESSED; SDL_PushEvent(&evt);
+    evt.type=SDL_MOUSEBUTTONDOWN;
+    evt.button.button=(b==PPT_BTN_X || b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
+    evt.button.state=SDL_PRESSED;SDL_PushEvent(&evt);
   }
 }
 static void releaseButton(int b){
@@ -335,19 +379,28 @@ static void releaseButton(int b){
   /* Execute START when released so L1+START cannot accidentally PLAY. */
   const bool doStart=(b==PPT_BTN_START && startPending && !exitChordSent && !held[PPT_BTN_L1] && !ui.askBoxShown);
   const bool doSong=startWithShift;
+  const bool doPattern=(b==PPT_BTN_L1 || b==PPT_BTN_R1) &&
+      !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
+      !held[PPT_BTN_MENU] && !ui.askBoxShown;
   held[b]=false;
   if(b==PPT_BTN_START){startPending=false;exitChordSent=false;}
   if(b==PPT_BTN_L1 || b==PPT_BTN_MENU)exitChordSent=false;
   if(doStart)startPlayback(doSong);
-  if((b==PPT_BTN_R2 || b==PPT_BTN_L2) && video.window){
+  if(doPattern)changePattern(b==PPT_BTN_L1?-1:1);
+  if(b==PPT_BTN_L1 || b==PPT_BTN_R1)shoulderUsed[b==PPT_BTN_R1]=false;
+  const bool legacy=(ui.askBoxShown || ui.diskOpScreenShown || ui.editTextFlag);
+  if(video.window && (b==PPT_BTN_X || b==PPT_BTN_Y ||
+     (legacy && (b==PPT_BTN_R2 || b==PPT_BTN_L2)))){
     SDL_Event evt;memset(&evt,0,sizeof(evt));
-    evt.type=SDL_MOUSEBUTTONUP;evt.button.button=(b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
-    evt.button.state=SDL_RELEASED; SDL_PushEvent(&evt);
+    evt.type=SDL_MOUSEBUTTONUP;
+    evt.button.button=(b==PPT_BTN_X || b==PPT_BTN_R2)?SDL_BUTTON_LEFT:SDL_BUTTON_RIGHT;
+    evt.button.state=SDL_RELEASED;SDL_PushEvent(&evt);
   }
 }
 static void directionAction(int d){
   /* During askBox(), the D-pad controls the pointer, not the pattern.
      The askBox owns a separate event loop but still calls ppt_input_update(). */
+  if(held[PPT_BTN_R1])shoulderUsed[1]=true;
   if(ui.askBoxShown || held[PPT_BTN_R1]){
     int dx=(d==2?-MOUSE_STEP:(d==3?MOUSE_STEP:0));
     int dy=(d==0?-MOUSE_STEP:(d==1?MOUSE_STEP:0));
@@ -378,7 +431,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.2.6 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.2.8 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -428,7 +481,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.2.6 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.2.8 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -439,7 +492,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.2.6 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.2.7 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

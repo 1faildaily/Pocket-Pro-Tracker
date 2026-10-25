@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory() as d:
     main=(base/'src'/'pt2_main.c')
     main.write_text("""#include "pt2_keyboard.h"
 int main() {
+\tloadConfig();
 \tSDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 \twhile(1) {
 \t\thandleInput();
@@ -55,10 +56,18 @@ void handleEditKeys(SDL_Scancode scancode, bool normalMode)
     jamAndPlaceSample(scancode, normalMode);
 }
 """)
-    (base/'src'/'pt2_visuals.c').write_text("""void updateRenderSizeVars(void) {
+    (base/'src'/'pt2_visuals.c').write_text("""#include <stdio.h>
+void updateRenderSizeVars(void) {
+\tSDL_GetWindowSize(video.window, &video.windowW, &video.windowH);
 \t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);
 \t\t\tvideo.renderW = SCREEN_W * maxUpscaleFactor;
 \t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;
+\t\t\tSDL_GL_GetDrawableSize(video.window, &widthInPixels, &heightInPixels);
+\t// "hardware mouse" calculations
+}
+bool setupVideo(void) {
+\tint32_t screenW = SCREEN_W * config.videoScaleFactor;
+\tint32_t screenH = SCREEN_H * config.videoScaleFactor;
 }
 """)
     for _ in range(2): # idempotency after a second run
@@ -72,9 +81,13 @@ void handleEditKeys(SDL_Scancode scancode, bool normalMode)
     assert 'jamAndPlaceSample(SDL_SCANCODE_UNKNOWN, false, pitch, true)' in editSrc
     assert editSrc.count('jamAndPlaceSample(scancode, normalMode, -1, false);')==2
     visualsSrc=(base/'src'/'pt2_visuals.c').read_text()
-    assert visualsSrc.count('PPT v0.2.6: fullscreen aspect-fit')==1
+    assert visualsSrc.count('PPT v0.2.8: native SDL window and renderer coordinates.')==1
     assert 'config.integerScaling' in visualsSrc
-    assert 'video.renderW = (int32_t)((int64_t)video.windowH * SCREEN_W / SCREEN_H);' in visualsSrc
+    assert 'SDL_GetRendererOutputSize(video.renderer' in visualsSrc
+    assert 'screenW = 640;' in visualsSrc
+    assert 'SDL_GL_GetDrawableSize(video.window' not in visualsSrc
+    assert 'PPT VIDEO v0.2.8' in visualsSrc
+    assert 'PPT v0.2.8: RG35XX Pro native fullscreen output.' in ms
     print('PT2 main/askBox patch anchors and idempotency OK')
 PY
 
@@ -90,10 +103,10 @@ assert 'jamAndPlaceSample' in p
 print('Aspect-fit config and native note audition integration checked')
 PY
 
-python3 - <<'PYTEST026'
+python3 - <<'PYTEST027'
 w,h=640,480
 rw=(h*320)//255
 assert rw==602
 assert (w-rw)//2==19
 print('RG35XX Pro: image 602x480, 19px black sidebars confirmed mathematically')
-PYTEST026
+PYTEST027

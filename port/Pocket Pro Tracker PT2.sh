@@ -35,9 +35,10 @@ export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
 export SDL_RENDER_DRIVER="${SDL_RENDER_DRIVER:-software}"
 export SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0
 export PPT_DIAG_LOG="$GAMEDIR/ppt_input.log"
+export PPT_VIDEO_DIAG_LOG="$GAMEDIR/ppt_video.log"
 chmod +x ./pt2-clone 2>/dev/null || true
 {
- echo "===== PPT PT2 v0.2.2 $(date) ====="
+ echo "===== PPT PT2 v0.2.7 $(date) ====="
  echo "System: $(uname -m)"
  echo "SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-autodetect} SDL_AUDIODRIVER=$SDL_AUDIODRIVER SDL_RENDER_DRIVER=$SDL_RENDER_DRIVER"
  echo "Binary: $(ls -l ./pt2-clone 2>&1)"
