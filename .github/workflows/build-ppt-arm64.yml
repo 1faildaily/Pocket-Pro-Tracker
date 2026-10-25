@@ -42,5 +42,5 @@ jobs:
           unzip -t pocket_pro_tracker_pt2.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: PPT_v0.2_PT2_PortMaster_ARM64
+          name: PPT_v0.2.1_PT2_PortMaster_ARM64
           path: pocket_pro_tracker_pt2.zip

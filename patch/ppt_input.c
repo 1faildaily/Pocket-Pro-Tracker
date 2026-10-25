@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller prototype v0.2 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.2.1 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <limits.h>
 #include <linux/input.h>
+#include <sys/ioctl.h>
+#include "pt2_mouse.h"
 #include "pt2_header.h"
 #include "pt2_structs.h"
 #include "pt2_visuals.h"
@@ -27,6 +29,9 @@
 #define INITIAL_DELAY 280
 #define REPEAT_DELAY 85
 #define MOUSE_STEP 6
+#define MOUSE_DEADZONE 5500
+#define SCREEN_MOUSE_W 320
+#define SCREEN_MOUSE_H 255
 #define C_COUNT 10
 
 enum {PPT_BTN_SELECT, PPT_BTN_START, PPT_BTN_L1, PPT_BTN_L2, PPT_BTN_R1, PPT_BTN_R2, PPT_BTN_A, PPT_BTN_B, PPT_BTN_X, PPT_BTN_Y};
@@ -37,7 +42,69 @@ static uint32_t nextAt[4];
 static int lastPitch=24; /* C-3, original PT2 uses C-1..B-3 */
 static int lastSample=1; /* MOD sample number, one-based */
 static uint8_t lastCmd=0, lastParam=0;
-static int axes[2];
+/* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
+   with widely differing physical ranges. Never assume +/-32767. */
+static int clamp(int x,int lo,int hi);
+typedef struct {int min, max, value; bool valid, seen;} axis_t;
+static axis_t axis[4]; /* RX, RY, X, Y */
+static int mousePosX=160, mousePosY=127;
+static bool virtualMouse;
+static FILE *inputLog;
+static int logDirections, logAxes, logButtons;
+static void diagnostic(const char *kind,int code,int value){
+  if(!inputLog)return;
+  int *counter=&logButtons;
+  if(kind[0]=='D')counter=&logDirections;
+  if(kind[0]=='A')counter=&logAxes;
+  if((*counter)++>=24)return;
+  fprintf(inputLog,"PPT 0.2.1 %s code=%d value=%d\n",kind,code,value);
+  fflush(inputLog);
+}
+static int axisIndex(unsigned code){
+  if(code==ABS_RX)return 0;
+  if(code==ABS_RY)return 1;
+  if(code==ABS_X)return 2;
+  if(code==ABS_Y)return 3;
+  return -1;
+}
+static int axisAmount(int i){
+  if(i<0||i>=4||!axis[i].seen)return 0;
+  const axis_t *a=&axis[i];
+  int lo=a->valid?a->min:-32768, hi=a->valid?a->max:32767;
+  if(hi<=lo)return 0;
+  int center=lo+(hi-lo)/2, half=(hi-lo)/2;
+  if(!half)return 0;
+  int64_t normalized=((int64_t)a->value-center)*32767/half;
+  return clamp((int)normalized,-32767,32767);
+}
+static void moveVirtualMouse(int dx,int dy){
+  if(!dx&&!dy)return;
+  virtualMouse=true;
+  mousePosX=clamp(mousePosX+dx,0,SCREEN_MOUSE_W-1);
+  mousePosY=clamp(mousePosY+dy,0,SCREEN_MOUSE_H-1);
+}
+static void applyVirtualMouse(void){
+  if(!virtualMouse || !video.window)return;
+  /* PT2 reads OS mouse coordinates before our adapter runs. Under KMSDRM,
+     SDL_WarpMouseInWindow can fail to update the software pointer. Set the
+     actual PT2 software mouse and its sprite, independent of SDL warping. */
+  mouse.x=mousePosX; mouse.y=mousePosY;
+  mouse.rawX=mouse.absX=mousePosX;
+  mouse.rawY=mouse.absY=mousePosY;
+  setSpritePos(SPRITE_MOUSE_POINTER,mousePosX,mousePosY);
+}
+static void updateAnalogMouse(void){
+  int x=0,y=0;
+  /* Prefer right stick; use X/Y only if RX/RY never delivered events. */
+  if(axis[0].seen||axis[1].seen){x=axisAmount(0);y=axisAmount(1);}
+  else {x=axisAmount(2);y=axisAmount(3);}
+  int dx=0,dy=0;
+  if(abs(x)>MOUSE_DEADZONE)dx=(x<0?-1:1)*(1+abs(x)/9000);
+  if(abs(y)>MOUSE_DEADZONE)dy=(y<0?-1:1)*(1+abs(y)/9000);
+  moveVirtualMouse(dx,dy);
+}
+static void processHatAxis(unsigned code,int value);
+
 static bool active;
 static const uint16_t periods[36] = {
   856,808,762,720,678,640,604,570,538,508,480,453,
@@ -179,26 +246,61 @@ static void releaseButton(int b){
     evt.button.state=SDL_RELEASED; SDL_PushEvent(&evt);
   }
 }
+static void directionAction(int d){
+  /* R1+D-pad doubles as a reliable, no-analog-required mouse control. */
+  if(held[PPT_BTN_R1]){
+    int dx=(d==2?-MOUSE_STEP:(d==3?MOUSE_STEP:0));
+    int dy=(d==0?-MOUSE_STEP:(d==1?MOUSE_STEP:0));
+    moveVirtualMouse(dx,dy);
+  }else if(held[PPT_BTN_A])edit(d);
+  else navigate(d);
+}
 static void directionEvent(int d,bool down){
   if(d<0||d>3)return;
   if(!down){dir[d]=false;dirRepeat[d]=false;return;}
   if(dir[d])return;
   dir[d]=true;dirRepeat[d]=false;
   nextAt[d]=SDL_GetTicks()+INITIAL_DELAY;
-  if(held[PPT_BTN_A])edit(d);else navigate(d);
+  directionAction(d);
+}
+static void processHatAxis(unsigned code,int value){
+  diagnostic("DPAD-HAT",(int)code,value);
+  if(code==ABS_HAT0X){
+    directionEvent(2,value<0);
+    directionEvent(3,value>0);
+  }else if(code==ABS_HAT0Y){
+    directionEvent(0,value<0);
+    directionEvent(1,value>0);
+  }
 }
 void ppt_input_init(void){
   memset(held,0,sizeof(held));memset(dir,0,sizeof(dir));
+  memset(axis,0,sizeof(axis));
+  const char *logPath=getenv("PPT_DIAG_LOG");
+  if(logPath && logPath[0])inputLog=fopen(logPath,"a");
+  if(inputLog){fprintf(inputLog,"PPT 0.2.1 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
     fds[i]=open(path,O_RDONLY|O_NONBLOCK|O_CLOEXEC);
+    if(fds[i]<0)continue;
+    if(inputLog){fprintf(inputLog,"open %s OK\n",path);fflush(inputLog);}
+    for(int a=0;a<4;a++){
+      static const unsigned ids[]={ABS_RX,ABS_RY,ABS_X,ABS_Y};
+      struct input_absinfo info;
+      if(ioctl(fds[i],EVIOCGABS(ids[a]),&info)==0 && info.maximum>info.minimum){
+        axis[a].min=info.minimum;axis[a].max=info.maximum;
+        axis[a].value=info.value;axis[a].valid=true;
+        if(inputLog){fprintf(inputLog,"axis %u min=%d max=%d center=%d\n",ids[a],info.minimum,info.maximum,info.value);fflush(inputLog);}
+      }
+    }
   }
   active=true;
 }
 void ppt_input_close(void){
   for(int i=0;i<DEVICES;i++){if(fds[i]>=0){close(fds[i]);fds[i]=-1;}}
   active=false;
+  if(inputLog){fclose(inputLog);inputLog=NULL;}
 }
 void ppt_input_update(void){
   if(!active)return;
@@ -211,29 +313,30 @@ void ppt_input_update(void){
         bool down=ev.value!=0;
         int b=-1;
         for(int j=0;j<C_COUNT;j++)if((int)ev.code==rawMap[j]){b=j;break;}
-        if(b>=0){if(down)buttonEvent(b,true);else releaseButton(b);continue;}
-        if(ev.code==KEY_UP)directionEvent(0,down);
-        else if(ev.code==KEY_DOWN)directionEvent(1,down);
-        else if(ev.code==KEY_LEFT)directionEvent(2,down);
-        else if(ev.code==KEY_RIGHT)directionEvent(3,down);
+        if(b>=0){diagnostic("BUTTON",(int)ev.code,ev.value);if(down)buttonEvent(b,true);else releaseButton(b);continue;}
+        int d=-1;
+        if(ev.code==KEY_UP || ev.code==BTN_DPAD_UP)d=0;
+        else if(ev.code==KEY_DOWN || ev.code==BTN_DPAD_DOWN)d=1;
+        else if(ev.code==KEY_LEFT || ev.code==BTN_DPAD_LEFT)d=2;
+        else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
+        if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
       } else if(ev.type==EV_ABS){
-        if(ev.code==ABS_RX)axes[0]=(int)ev.value;
-        else if(ev.code==ABS_RY)axes[1]=(int)ev.value;
+        if(ev.code==ABS_HAT0X || ev.code==ABS_HAT0Y)processHatAxis(ev.code,(int)ev.value);
+        else {
+          int a=axisIndex(ev.code);
+          if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
+            diagnostic("ANALOG",(int)ev.code,(int)ev.value);}
+        }
       }
     }
   }
   uint32_t now=SDL_GetTicks();
   for(int d=0;d<4;d++){
     if(dir[d] && (int32_t)(now-nextAt[d])>=0){
-      if(held[PPT_BTN_A])edit(d);else navigate(d);
+      directionAction(d);
       nextAt[d]=now+REPEAT_DELAY;dirRepeat[d]=true;
     }
   }
-  /* optional mouse from right stick; evdev ABS_RX/ABS_RY calibration is pending */
-  if(video.window && (abs(axes[0])>6000 || abs(axes[1])>6000)){
-    int x,y;SDL_GetMouseState(&x,&y);
-    int dx=(abs(axes[0])>6000)?clamp(axes[0]/7000,-MOUSE_STEP,MOUSE_STEP):0;
-    int dy=(abs(axes[1])>6000)?clamp(axes[1]/7000,-MOUSE_STEP,MOUSE_STEP):0;
-    SDL_WarpMouseInWindow(video.window,x+dx,y+dy);
-  }
+  updateAnalogMouse();
+  applyVirtualMouse();
 }

@@ -8,4 +8,6 @@ typedef struct {int8_t currSample;bool programRunning;} editor_t;
 typedef struct {bool updatePatternData, updateCurrSampleNum,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown;} ui_t;
 typedef struct {int pos,channel;} cursor_t;
 typedef struct {SDL_Window*window;}video_t;
+typedef struct {int x,y,rawX,rawY,absX,absY;} mouse_t;
+extern mouse_t mouse;
 extern module_t*song;extern editor_t editor;extern ui_t ui;extern cursor_t cursor;extern video_t video;

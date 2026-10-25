@@ -7,9 +7,11 @@
 module_t state,*song=&state;
 editor_t editor;
 ui_t ui;
+mouse_t mouse;
 cursor_t cursor;
 video_t video;
 void updateCursorPos(void){}
+void setSpritePos(int s,int x,int y){(void)s;(void)x;(void)y;}
 unsigned int SDL_GetTicks(void){return 0;}
 int SDL_PushEvent(SDL_Event *event){(void)event;return 1;}
 unsigned int SDL_GetMouseState(int*x,int*y){*x=0;*y=0;return 0;}
@@ -46,6 +48,31 @@ int main(void){
   assert(rawMap[PPT_BTN_R1]==309);
   assert(rawMap[PPT_BTN_R2]==315);
   assert(rawMap[PPT_BTN_A]==304 && rawMap[PPT_BTN_B]==305 && rawMap[PPT_BTN_X]==307 && rawMap[PPT_BTN_Y]==306);
-  puts("PPT v0.2 controller: 20 assertions passed");
+  /* Actual evdev on muOS can expose the D-pad as ABS_HAT0Y. */
+  state.currRow=7;
+  processHatAxis(ABS_HAT0Y,1);
+  assert(state.currRow==8 && dir[1]);
+  processHatAxis(ABS_HAT0Y,0);
+  assert(!dir[1]);
+  processHatAxis(ABS_HAT0X,-1);
+  assert(dir[2]);
+  processHatAxis(ABS_HAT0X,0);
+  assert(!dir[2]);
+  /* R1+D-pad moves the virtual mouse, without altering the row. */
+  held[PPT_BTN_R1]=true;
+  int mx=mousePosX, row=state.currRow;
+  directionEvent(3,true);
+  assert(mousePosX>mx && state.currRow==row);
+  directionEvent(3,false);
+  held[PPT_BTN_R1]=false;
+  video.window=(SDL_Window*)1;
+  applyVirtualMouse();
+  assert(mouse.x==mousePosX && mouse.y==mousePosY);
+  /* Analog sticks with positive range 0..255 must normalize correctly. */
+  axis[0]=(axis_t){.min=0,.max=255,.value=255,.valid=true,.seen=true};
+  assert(axisAmount(0)>30000);
+  axis[0].value=127;
+  assert(abs(axisAmount(0))<1000);
+  puts("PPT v0.2.1 input: Dpad HAT, mouse fallback, axes and core tests passed");
   return 0;
 }
