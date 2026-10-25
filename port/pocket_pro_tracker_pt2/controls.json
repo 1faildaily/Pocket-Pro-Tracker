@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "buttons": [
+    {
+      "name": "SELECT",
+      "logical": 314,
+      "raw": 310
+    },
+    {
+      "name": "START",
+      "logical": 315,
+      "raw": 311
+    },
+    {
+      "name": "L1",
+      "logical": 310,
+      "raw": 308
+    },
+    {
+      "name": "L2",
+      "logical": 312,
+      "raw": 314
+    },
+    {
+      "name": "R1",
+      "logical": 311,
+      "raw": 309
+    },
+    {
+      "name": "R2",
+      "logical": 313,
+      "raw": 315
+    },
+    {
+      "name": "A",
+      "logical": 304,
+      "raw": 304
+    },
+    {
+      "name": "B",
+      "logical": 305,
+      "raw": 305
+    },
+    {
+      "name": "X",
+      "logical": 307,
+      "raw": 307
+    },
+    {
+      "name": "Y",
+      "logical": 308,
+      "raw": 306
+    }
+  ]
+}
