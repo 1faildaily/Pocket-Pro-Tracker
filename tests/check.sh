@@ -14,6 +14,8 @@ print('Calibration JSON validated')
 PY
 bash -n 'port/Pocket Pro Tracker PT2.sh'
 python3 -m py_compile patch/apply_patch.py
+gcc -std=c11 -Wall -Wextra -Werror tests/scale_test.c -o /tmp/ppt_scale_tests
+/tmp/ppt_scale_tests
 
 python3 - <<'PY'
 from pathlib import Path
@@ -57,6 +59,7 @@ void handleEditKeys(SDL_Scancode scancode, bool normalMode)
 }
 """)
     (base/'src'/'pt2_visuals.c').write_text("""#include <stdio.h>
+#include "pt2_visuals.h"
 void updateRenderSizeVars(void) {
 \tSDL_GetWindowSize(video.window, &video.windowW, &video.windowH);
 \t\t\tconst int32_t maxUpscaleFactor = MIN(video.windowW / SCREEN_W, video.windowH / SCREEN_H);
@@ -64,6 +67,20 @@ void updateRenderSizeVars(void) {
 \t\t\tvideo.renderH = SCREEN_H * maxUpscaleFactor;
 \t\t\tSDL_GL_GetDrawableSize(video.window, &widthInPixels, &heightInPixels);
 \t// "hardware mouse" calculations
+}
+void flipFrame(void)
+{
+	SDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
+
+	// SDL 2.0.14 bug on Windows (?): This function consumes ever-increasing memory if the program is minimized
+	if (!minimized)
+		SDL_RenderClear(video.renderer);
+	if (video.useCustomRenderRect)
+		SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
+	else
+		SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
+
+	SDL_RenderPresent(video.renderer);
 }
 bool setupVideo(void) {
 \tint32_t screenW = SCREEN_W * config.videoScaleFactor;
@@ -87,7 +104,12 @@ bool setupVideo(void) {
     assert 'screenW = 640;' in visualsSrc
     assert 'SDL_GL_GetDrawableSize(video.window' not in visualsSrc
     assert 'PPT VIDEO v0.2.8' in visualsSrc
+    assert 'PPT VIDEO v0.2.9 COMPOSED' in visualsSrc
+    assert 'pptPresentFinalFrame' in visualsSrc
+    assert 'SDL_RenderCopy(video.renderer, pptFinalTexture, NULL, NULL)' in visualsSrc
+    assert 'SDL_RenderSetLogicalSize(video.renderer, 0, 0)' in visualsSrc
     assert 'PPT v0.2.8: RG35XX Pro native fullscreen output.' in ms
+    assert (base/'src'/'ppt_scale.h').exists()
     print('PT2 main/askBox patch anchors and idempotency OK')
 PY
 

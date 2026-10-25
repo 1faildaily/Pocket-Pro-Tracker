@@ -194,3 +194,121 @@ if marker not in vs:
 else:
     print('PPT v0.2.8 native SDL scaling patch already installed')
 print('PPT v0.2.8 output-size patch applied')
+
+
+# v0.2.9: the v0.2.8 render rectangle was geometrically correct according to
+# ppt_video.log, yet the actual screen still had top/bottom black borders.
+# Bypass every subsequent SDL scaling/viewport path by uploading a fully
+# composed 640x480 frame and presenting it at exactly 1:1.
+shutil.copy2(pathlib.Path(__file__).with_name('ppt_scale.h'), root/'src'/'ppt_scale.h')
+vs = visuals.read_text()
+if 'PPT v0.2.9 FINAL FRAME COMPOSITE' not in vs:
+    includeAnchor = '#include "pt2_visuals.h"'
+    assert vs.count(includeAnchor) == 1, 'PT2 visuals include anchor changed'
+    vs = vs.replace(includeAnchor, includeAnchor + '\n#include "ppt_scale.h"', 1)
+    code = r'''
+/* PPT v0.2.9 FINAL FRAME COMPOSITE: physical 1:1 output texture.
+ * The original PT2 texture still feeds its framebuffer/sprites and remains
+ * unchanged. This is presentation-only; player/audio/input stay untouched. */
+static SDL_Texture *pptFinalTexture;
+static uint32_t *pptFinalPixels;
+static int pptFinalW, pptFinalH;
+static bool pptFinalLogged;
+
+static bool pptPresentFinalFrame(void)
+{
+    if (!video.fullscreen || video.renderer == NULL || video.frameBuffer == NULL)
+        return false;
+
+    int outputW = 0, outputH = 0;
+    if (SDL_GetRendererOutputSize(video.renderer, &outputW, &outputH) != 0 ||
+        outputW < 1 || outputH < 1 || outputW > 4096 || outputH > 4096)
+        return false;
+
+    if (pptFinalTexture == NULL || pptFinalW != outputW || pptFinalH != outputH)
+    {
+        if (pptFinalTexture != NULL) SDL_DestroyTexture(pptFinalTexture);
+        pptFinalTexture = NULL;
+        free(pptFinalPixels);
+        pptFinalPixels = NULL;
+        pptFinalW = outputW;
+        pptFinalH = outputH;
+        pptFinalPixels = (uint32_t *)malloc((size_t)outputW * outputH * sizeof(uint32_t));
+        if (pptFinalPixels == NULL) return false;
+        pptFinalTexture = SDL_CreateTexture(video.renderer, SDL_PIXELFORMAT_ARGB8888,
+                                             SDL_TEXTUREACCESS_STREAMING, outputW, outputH);
+        if (pptFinalTexture == NULL) return false;
+        SDL_SetTextureBlendMode(pptFinalTexture, SDL_BLENDMODE_NONE);
+        /* Explicitly remove SDL internal logical scaling or viewport offsets. */
+        SDL_RenderSetLogicalSize(video.renderer, 0, 0);
+        SDL_RenderSetViewport(video.renderer, NULL);
+        SDL_RenderSetScale(video.renderer, 1.0f, 1.0f);
+        pptFinalLogged = false;
+    }
+
+    PPTScaleRect fitted;
+    if (!ppt_compose_frame(video.frameBuffer, SCREEN_W, SCREEN_H,
+                           pptFinalPixels, outputW, outputH, &fitted)) return false;
+    if (SDL_UpdateTexture(pptFinalTexture, NULL, pptFinalPixels,
+                          outputW * (int)sizeof(uint32_t)) != 0) return false;
+
+    if (!pptFinalLogged)
+    {
+        pptFinalLogged = true;
+        int logicalW=0, logicalH=0;
+        SDL_Rect viewport;
+        float scaleX=0, scaleY=0;
+        SDL_RenderGetLogicalSize(video.renderer, &logicalW, &logicalH);
+        SDL_RenderGetViewport(video.renderer, &viewport);
+        SDL_RenderGetScale(video.renderer, &scaleX, &scaleY);
+        const char *logPath = getenv("PPT_VIDEO_DIAG_LOG");
+        if (logPath && *logPath)
+        {
+            FILE *f=fopen(logPath,"a");
+            if(f)
+            {
+                fprintf(f,"PPT VIDEO v0.2.9 COMPOSED frame=%dx%d rect=%d,%d,%d,%d logical=%dx%d viewport=%d,%d,%d,%d scale=%.3f,%.3f driver=%s\n",
+                        outputW,outputH,fitted.x,fitted.y,fitted.w,fitted.h,
+                        logicalW,logicalH,viewport.x,viewport.y,viewport.w,viewport.h,
+                        (double)scaleX,(double)scaleY,SDL_GetCurrentVideoDriver());
+                fclose(f);
+            }
+        }
+    }
+    SDL_RenderClear(video.renderer);
+    if (SDL_RenderCopy(video.renderer, pptFinalTexture, NULL, NULL) != 0) return false;
+    SDL_RenderPresent(video.renderer);
+    return true;
+}
+'''
+    anchor = 'void flipFrame(void)\n{'
+    assert vs.count(anchor) == 1, 'PT2 flipFrame anchor changed'
+    vs=vs.replace(anchor,code+'\n'+anchor,1)
+    old='''\tSDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
+
+	// SDL 2.0.14 bug on Windows (?): This function consumes ever-increasing memory if the program is minimized
+	if (!minimized)
+		SDL_RenderClear(video.renderer);
+	if (video.useCustomRenderRect)
+		SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
+	else
+		SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
+
+	SDL_RenderPresent(video.renderer);'''
+    new='''\tif (!pptPresentFinalFrame())
+	{
+		/* Fallback if stage allocation fails or fullscreen is off. */
+		SDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
+		if (!minimized) SDL_RenderClear(video.renderer);
+		if (video.useCustomRenderRect)
+			SDL_RenderCopy(video.renderer, video.texture, NULL, &video.renderRect);
+		else
+			SDL_RenderCopy(video.renderer, video.texture, NULL, NULL);
+		SDL_RenderPresent(video.renderer);
+	}'''
+    assert vs.count(old)==1, 'PT2 flipFrame presentation anchor changed'
+    vs=vs.replace(old,new,1)
+    visuals.write_text(vs)
+else:
+    print('PPT v0.2.9 composed output already installed')
+print('PPT v0.2.9 final compose patch applied')
