@@ -1,3 +1,71 @@
+# Pocket Pro Tracker v0.3.15 — RIGHT STICK QUICK VIEWS + R1 MOUSE BOOST
+
+**Baza: v0.3.14**, z paletą XCOPY RED i bez czterech kanałowych VU-meterów. Pozostają wszystkie skróty odtwarzania, LIVE EDIT, ghost, POSITION LOOP, LSDJ clipboard, EFFECT GUIDE oraz karuzele wyłącznie dla MOD NAME i SAMPLE NAME.
+
+## Prawy drążek: cztery ekrany
+
+| Wychylenie prawego analoga | Otwierany widok |
+|---|---|
+| Maksymalnie w lewo | POSITION-ED (POS) |
+| Maksymalnie w prawo | EDIT PATTERN, główny ekran patternu |
+| Maksymalnie do góry | DISK-OP |
+| Maksymalnie w dół | SAMPLER |
+
+- Przełączenie następuje dopiero przy **ponad ok. 91% wychylenia**, nie przy niewielkim poruszeniu gałką.
+- **Tylko raz na wychylenie**: puść drążek w pobliżu środka, żeby uzbroić następny skrót. Skos pod kątem 45° nie przełącza ekranu.
+- Ruch nie uruchamia ani nie zatrzymuje MOD-a; nie zmienia pozycji ROW, pozycji SONG ani ustawień sampla.
+- Nie przełączaj ekranu podczas edycji nazwy ani w modalnym pytaniu PT2, wtedy prawy drążek pozostaje ignorowany.
+- Osi **4 / 5** użyto według wcześniejszych logów muOS (prawy drążek: poziom / pion). Jeśli rzeczywiste osie działają odwrotnie, dołącz `ppt_input.log` z nowego testu.
+
+## Mysz
+
+- **R1 + D-pad przesuwa kursor myszy 2× szybciej niż w v0.3.14.**
+- Lewy analog oraz jego precyzyjna krzywa/prędkość nie uległy zmianie.
+- Zwykły D-pad i przyciski funkcyjne nie zmieniły działania. W oknach potwierdzenia mysz D-padem zachowuje poprzednią prędkość.
+
+## Kompilacja
+
+Rozpakuj SourceKit i zastąp jego zawartością repozytorium w GitHub Desktop.
+
+Summary: `PPT v0.3.15 - Right stick quick views and faster R1 mouse`
+
+**Commit to main → Push origin**. Po poprawnym GitHub Actions pobierz `PPT_v0.3.15_RightStickScreens_FastR1Mouse_ARM64` i zainstaluj wewnętrzne `pocket_pro_tracker_pt2.zip` przez PortMaster.
+
+Testy lokalne (`bash tests/check.sh`) obejmują logikę wychyleń, zatrzask przeciw powtórkom, wykluczenie przekątnych, bezpieczeństwo okien dialogowych, dwukrotną prędkość myszy R1+D-pad oraz ponowne nałożenie pozostałych poprawek na przykładowe źródła. Pełna kompilacja ARM64 i test na urządzeniu pozostają do wykonania.
+
+---
+
+# Pocket Pro Tracker v0.3.14 — XCOPY RED bez VU-meterów na kanałach
+
+Baza: **v0.3.13**, zachowane wszystkie skróty, LIVE EDIT, ghost playhead,
+POSITION LOOP, kopiowanie LSDJ, ograniczenie prędkości myszy, MOD NAME i
+SAMPLE NAME, EFFECT GUIDE i oryginalna paleta XCOPY RED (`colors.ini`).
+
+**Jedyna zmiana wizualna:** wyłączone pionowe, animowane VU-metry przy
+czterech kanałach patternu. Spektrum i oscyloskopy w górnym wizualizatorze,
+wszystkie elementy patternu oraz silnik odtwarzania audio są bez zmian.
+
+Technicznie nakładka na `src/pt2_visuals.c` zamienia wyłącznie wywołanie
+`renderVuMeters()` wewnątrz `renderSprites()` na
+`fillToVuMetersBgBuffer()`; zachowujemy bufor tła potrzebny do
+bezpiecznego odrysowywania interfejsu. Funkcja renderVuMeters
+pozostaje w kodzie upstream, a audio nadal liczy poziomy jak dotychczas.
+Sekcja `[VU-meter]` w colors.ini pozostaje nietknięta; nie tworzymy
+nieprawidłowego pliku palety.
+
+Instalacja: rozpakuj SourceKit i skopiuj pliki do repozytorium GitHub Desktop,
+zastępując starszą wersję. Commit Summary:
+`PPT v0.3.14 - Hide channel VU meters, keep XCOPY palette`
+Commit to main → Push origin → GitHub Actions. Pobierz artefakt
+`PPT_v0.3.14_XCOPY_No_Channel_VU_ARM64`, rozpakuj wewnętrzny
+`pocket_pro_tracker_pt2.zip` i zainstaluj w muOS/PortMaster.
+
+Lokalny test `bash tests/check.sh` obejmuje kontroler, paletę, podwójne
+nakładanie poprawek i obecność wyłącznika VU w źródłach; pełny build ARM64
+oraz test fizyczny na Anbernicu są po stronie GitHub Actions/urządzenia.
+
+---
+
 # Pocket Pro Tracker v0.3.13 — PALETA XCOPY (colors.ini)
 
 **Baza: v0.3.12 bez zmian w kodzie sterowania, audio i interfejsie.**

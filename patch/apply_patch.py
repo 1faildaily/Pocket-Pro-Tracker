@@ -316,3 +316,29 @@ else:
     print('PT2 POSITION LOOP highlight already patched')
 
 print('PPT v0.3.8 original PT2 fullscreen renderer retained')
+
+
+# PPT v0.3.14: Disable ONLY the moving four-channel VU bars.
+# renderSprites() previously called renderVuMeters() which snapshots the
+# background and then draws channel levels into the framebuffer. Keep that
+# snapshot (used by PT2's sprite/background restore), but do not paint the
+# VU bars. Leave scopes, spectrum analyzer and audio engine untouched.
+vis=root/'src'/'pt2_visuals.c'
+assert vis.exists(), f'Missing upstream PT2 renderer: {vis}'
+vs=vis.read_text()
+vu_anchor='\trenderVuMeters(); // let\'s put it here even though it\'s not sprite-based'
+vu_replacement='\tfillToVuMetersBgBuffer(); // PPT_NO_CHANNEL_VU: background snapshot only; no level bars'
+if 'PPT_NO_CHANNEL_VU' not in vs:
+    assert vs.count(vu_anchor)==1, 'PT2 v1.92 channel-VU rendering anchor changed'
+    assert vs.count('void renderSprites(void)')==1, 'PT2 renderSprites anchor changed'
+    assert vs.count('void renderVuMeters(void)')==1, 'PT2 renderVuMeters anchor changed'
+    # Verify that the call to be replaced belongs to renderSprites(),
+    # not the standalone renderVuMeters() function or another code path.
+    tail=vs.split('void renderSprites(void)',1)[1]
+    assert tail.count(vu_anchor)==1, 'VU call not found inside renderSprites()'
+    vs=vs.replace(vu_anchor,vu_replacement,1)
+    vis.write_text(vs)
+    print('PPT v0.3.14: four-channel VU bars hidden (background preserved)')
+else:
+    assert vu_replacement in vs and vu_anchor not in vs
+    print('PPT v0.3.14: VU renderer already patched')

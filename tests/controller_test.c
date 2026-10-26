@@ -44,6 +44,12 @@ void leaveTextEditMode(int update){assert(update==EDIT_TEXT_UPDATE);ui.editTextF
  state.modified=true;textCommitted++;}
 void updateCursorPos(void){}
 void setSpritePos(int s,int x,int y){(void)s;(void)x;(void)y;}
+static int viewRenders, samplerOpens, samplerExits, diskRenders;
+void renderDiskOpScreen(void){diskRenders++;}
+void displayMainScreen(void){viewRenders++;if(ui.diskOpScreenShown)renderDiskOpScreen();}
+void samplerScreen(void){samplerOpens++;ui.samplerScreenShown=true;}
+void exitFromSam(void){samplerExits++;ui.samplerScreenShown=false;}
+
 unsigned int SDL_GetTicks(void){return 0;}
 static SDL_Event lastEvent; static int eventsPushed;
 int SDL_PushEvent(SDL_Event *event){lastEvent=*event;eventsPushed++;return 1;}
@@ -170,6 +176,47 @@ int main(void){
   editor.currSample=10;cursor.pos=CURSOR_SAMPLE1;
   insert();assert(patt[20].sample==11);
   assert(previewSample==10 && previewCalls==previewBefore+2);
+  /* v0.3.15: mouse speed doubles only when R1+D-pad is held. */
+  assert(R1_DPAD_MULTIPLIER==2);
+  int f0=0,f1=0, m0=0,m1=0;
+  for(int i=0;i<10;i++){
+    m0+=scaledMousePixels(MOUSE_STEP,&f0,1);
+    m1+=scaledMousePixels(MOUSE_STEP*R1_DPAD_MULTIPLIER,&f1,1);
+  }
+  assert(m0==42 && m1==84);
+  /* Right analog has independent axes, directional thresholds and recenter latch. */
+  axis[ABS_RY]=(axis_t){.min=-4096,.max=4096,.value=0,.valid=true,.seen=true};
+  axis[ABS_RZ]=(axis_t){.min=-4096,.max=4096,.value=0,.valid=true,.seen=true};
+  ui.posEdScreenShown=ui.diskOpScreenShown=ui.samplerScreenShown=false;
+  ui.editOpScreenShown=ui.askBoxShown=ui.editTextFlag=false;
+  rightStickArmed=true;editor.songPlaying=true;
+  int oldPlay=playCalls, oldStop=stopCalls;
+  axis[ABS_RY].value=-4096;updateRightStickViews();
+  assert(ui.posEdScreenShown && viewRenders==1);
+  axis[ABS_RY].value=4096;updateRightStickViews();
+  assert(ui.posEdScreenShown && viewRenders==1); /* no repeat until center */
+  axis[ABS_RY].value=0;updateRightStickViews();
+  axis[ABS_RY].value=4096;updateRightStickViews();
+  assert(!ui.posEdScreenShown && viewRenders==2);
+  axis[ABS_RY].value=0;updateRightStickViews();
+  axis[ABS_RZ].value=-4096;updateRightStickViews();
+  assert(ui.diskOpScreenShown && diskRenders==1);
+  axis[ABS_RZ].value=0;updateRightStickViews();
+  axis[ABS_RZ].value=4096;updateRightStickViews();
+  assert(ui.samplerScreenShown && !ui.diskOpScreenShown && samplerOpens==1);
+  axis[ABS_RZ].value=0;updateRightStickViews();
+  axis[ABS_RY].value=-4096;axis[ABS_RZ].value=4096;
+  int oldView=viewRenders;updateRightStickViews();
+  assert(viewRenders==oldView); /* diagonal must not accidentally switch */
+  axis[ABS_RY].value=axis[ABS_RZ].value=0;updateRightStickViews();
+  axis[ABS_RY].value=4096;updateRightStickViews();
+  assert(!ui.samplerScreenShown && samplerExits==1);
+  axis[ABS_RY].value=0;updateRightStickViews();
+  ui.editTextFlag=true;axis[ABS_RY].value=-4096;updateRightStickViews();
+  assert(!ui.posEdScreenShown && viewRenders==oldView+1);
+  ui.editTextFlag=false;axis[ABS_RY].value=0;updateRightStickViews();
+  assert(playCalls==oldPlay && stopCalls==oldStop && editor.songPlaying);
+  editor.songPlaying=false;
   /* Precision mouse: tiny deflection moves by fractions, not huge steps. */
   assert(precisionMouseStep(4200)==0);
   assert(precisionMouseStep(8000)>0);

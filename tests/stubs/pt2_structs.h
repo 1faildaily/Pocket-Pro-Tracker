@@ -7,7 +7,7 @@ typedef struct {uint16_t patternTable[128];uint16_t songLength;char name[21];} h
 typedef struct {char text[23];} moduleSample_t;
 typedef struct {unsigned int currPattern, currPos; int currRow; int row; bool modified; header_t header; moduleSample_t samples[31]; note_t *patterns[MAX_PATTERNS];} module_t;
 typedef struct {int8_t currSample;bool programRunning, songPlaying, mixFlag; int playMode,currMode,recordMode;uint16_t *currPatternDisp,*currPosEdPattDisp;} editor_t;
-typedef struct {bool updatePatternData, updateCurrSampleNum,updateSongPattern,updateSongName,updateCurrSampleName,updateCurrPattText,updateSongPos,updatePosEd,posEdScreenShown,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown;} ui_t;
+typedef struct {bool updatePatternData, updateCurrSampleNum,updateSongPattern,updateSongName,updateCurrSampleName,updateCurrPattText,updateSongPos,updatePosEd,posEdScreenShown,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown,editOpScreenShown,aboutScreenShown;} ui_t;
 typedef struct {int pos,channel;} cursor_t;
 typedef struct {SDL_Window*window;}video_t;
 typedef struct {int x,y,rawX,rawY,absX,absY;} mouse_t;

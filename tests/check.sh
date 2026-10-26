@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory() as tmp:
  (p/'src/pt2_replayer.c').write_text('#include "pt2_visuals_sync.h"\nstatic void updateUIPositions(void)\n{\n\tif (editor.mod2WavOngoing || editor.pat2SmpOngoing)\n\t\treturn;\n\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;\n}\nstatic void nextPosition(void)\n{\n\t\tmodPos = (modPos + 1) & 127;\n\t\tif (modPos >= song->header.songLength) {}\n\t\tmodPattern = (int8_t)song->header.patternTable[modPos];\n\t\tif (modPattern > MAX_PATTERNS-1) {}\n}\n')
  (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_posed.c').write_text((root/'tests/fixtures/pt2_position_editor_sample.c').read_text())
+ (p/'src/pt2_visuals.c').write_text((root/'tests/fixtures/pt2_visuals_vu_sample.c').read_text())
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
@@ -41,7 +42,12 @@ with tempfile.TemporaryDirectory() as tmp:
  assert (p/'src/pt2_pattern_viewer.c').read_text().count('const bool pptIsGhost')==2
  assert (p/'src/pt2_pattern_viewer.c').read_text().count('fillRect(8, y, 16, 7, pptGhostBg)')==2
  assert (p/'src/pt2_pattern_viewer.c').read_text().count('pptSelectionBg(row, j,')>=24
- assert not (p/'src/pt2_visuals.c').exists()
+ vis=(p/'src/pt2_visuals.c').read_text()
+ assert 'fillToVuMetersBgBuffer(); // PPT_NO_CHANNEL_VU:' in vis
+ assert vis.count('PPT_NO_CHANNEL_VU')==1
+ assert 'renderVuMeters(); // let' not in vis
+ assert vis.count('void renderVuMeters(void)')==1
+ assert vis.count('void renderSprites(void)')==1
 print('Source integration and idempotency OK')
 PY
 python3 - <<'PY'
@@ -72,3 +78,12 @@ assert 'posMarking)movePosMark' in s
 assert 'togglePosLoop(' not in s
 print('POSITION follow independent mark and SELECT+Y full clear: structure OK')
 PY
+
+python3 - <<'PY_VU'
+from pathlib import Path
+p=Path('patch/apply_patch.py').read_text()
+assert 'renderVuMeters(); // let' in p
+assert 'fillToVuMetersBgBuffer(); // PPT_NO_CHANNEL_VU' in p
+assert 'pt2_visuals.c' in p
+print('PPT 0.3.14 NO CHANNEL VU: preserves channel audio and spectrum renderer')
+PY_VU

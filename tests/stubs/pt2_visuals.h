@@ -7,3 +7,6 @@ void statusAllRight(void);
 void updateCurrSample(void);
 
 void displayMsg(const char*);
+
+void displayMainScreen(void);
+void renderDiskOpScreen(void);
