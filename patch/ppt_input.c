@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.9 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.12 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -91,7 +91,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.10 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.12 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -120,7 +120,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.10 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.12 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -189,85 +189,88 @@ static void updateAnalogMouse(void){
 }
 
 
-/* PPT v0.3.6: character carousel exclusively for ProTracker's native
-   SONGNAME field. Enter the field with the existing mouse/X action.
-   The MOD stores a maximum of 20 single-byte characters, and PT2's
-   leaveTextEditMode() records the change and updates the filename state.
-   No separate name buffer means SAVE MODULE uses the same song name. */
-static const char songNameChars[]=" abcdefghijklmnopqrstuvwxyz0123456789-_";
+/* PT2 native carousel ONLY in MOD NAME and SAMPLE NAME.
+   All other string fields (POSITION, DISK OP, MIX) and number fields stay
+   on the original v0.3.10 controller path, without any carousel override.
+   The original PT2 text editor owns the buffer and its commit semantics. */
+static const char nameChars[]=" abcdefghijklmnopqrstuvwxyz0123456789-_";
 static bool mouseDownForwarded[C_COUNT];
-static bool isSongNameEdit(void){
-  return song && ui.editTextFlag && textEdit.type==TEXT_EDIT_STRING &&
-         textEdit.object==PTB_SONGNAME &&
-         textEdit.textStartPtr==song->header.name &&
-         textEdit.textPtr>=textEdit.textStartPtr &&
-         textEdit.textPtr<=textEdit.textEndPtr;
+typedef struct { char *ptr; size_t maxChars; bool sample; } nameEdit_t;
+static bool currentNameEdit(nameEdit_t *out){
+  if(!song || !ui.editTextFlag || textEdit.type!=TEXT_EDIT_STRING || editor.mixFlag)
+    return false;
+  char *name=NULL;
+  size_t cap=0;
+  bool isSample=false;
+  if(textEdit.object==PTB_SONGNAME){
+    name=song->header.name;cap=20;
+  }else if(textEdit.object==PTB_SAMPLENAME &&
+           editor.currSample>=0 && editor.currSample<MOD_SAMPLES){
+    name=song->samples[editor.currSample].text;cap=22;isSample=true;
+  }else return false;
+  if(textEdit.textStartPtr!=name || !textEdit.textPtr || !textEdit.textEndPtr ||
+     textEdit.textPtr<name || textEdit.textPtr>=name+cap ||
+     textEdit.textEndPtr<name || textEdit.textEndPtr>=name+cap)
+    return false;
+  if(out){out->ptr=name;out->maxChars=cap;out->sample=isSample;}
+  return true;
 }
-/* Browse characters in-place, preserving all other characters.
-   For a newly appended character keep a trailing NUL within name[21]. */
-static void songNameCycle(int step){
-  if(!isSongNameEdit())return;
+static void nameRedraw(const nameEdit_t *n){
+  if(n->sample)ui.updateCurrSampleName=true;
+  else ui.updateSongName=true;
+}
+/* Overwrite the selected character. Always keep the native terminator. */
+static void nameCycle(int step){
+  nameEdit_t n;
+  if(!currentNameEdit(&n))return;
   char *p=textEdit.textPtr;
   int idx=0;
   const char old=*p;
-  const int n=(int)(sizeof(songNameChars)-1);
-  for(int i=0;i<n;i++){
-    if(songNameChars[i]==old ||
-      ((old>='A' && old<='Z') && songNameChars[i]==old-'A'+'a')){
+  const int count=(int)(sizeof(nameChars)-1);
+  for(int i=0;i<count;i++){
+    if(nameChars[i]==old ||
+      ((old>='A' && old<='Z') && nameChars[i]==old-'A'+'a')){
       idx=i;break;
     }
   }
-  idx=(idx+step+n)%n;
-  /* old==0 means this is the end of the current song name. */
-  *p=songNameChars[idx];
-  if(old==0 && p<song->header.name+20)p[1]='\0';
-  song->header.name[20]='\0';
-  ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 SONGNAME cycle pos=%d char=%c\n",(int)(p-song->header.name),*p);fflush(inputLog);}
+  idx=(idx+step+count)%count;
+  *p=nameChars[idx];
+  if(old=='\0' && p<n.ptr+n.maxChars-1)p[1]='\0';
+  n.ptr[n.maxChars]='\0';
+  nameRedraw(&n);
 }
-/* B = native-style Backspace in SONGNAME: delete the character before
-   the caret, shift remaining characters left, and move the caret left.
-   No SDL keyboard event is synthesized here because the PT2 text editor
-   has already been entered by the X mouse click and this module owns the
-   SONGNAME carousel controls. Other edit fields retain normal B behavior. */
-static void songNameBackspace(void){
-  if(!isSongNameEdit())return;
-  char *const name=song->header.name;
-  const size_t len=strnlen(name,20);
-  /* If the caret was moved past the current string end, first bring it
-     back to the end; do not skip unrelated characters on deletion. */
-  while(textEdit.textPtr>name+len && textEdit.textPtr>name)
+/* B deletes the previous character, shifting the suffix left.
+   Cursor beyond current string end is first brought back to the end. */
+static void nameBackspace(void){
+  nameEdit_t n;
+  if(!currentNameEdit(&n))return;
+  const size_t len=strnlen(n.ptr,n.maxChars);
+  while(textEdit.textPtr>n.ptr+len && textEdit.textPtr>n.ptr)
     editTextPrevChar();
-  if(textEdit.textPtr<=name)return; /* first character: nothing to erase */
-  const size_t idx=(size_t)(textEdit.textPtr-name)-1;
-  if(idx<len){
-    /* Include the terminating NUL. In-place overlapping copy must use
-       memmove, not memcpy, or the suffix can become corrupted. */
-    memmove(name+idx,name+idx+1,len-idx);
-  }
+  if(textEdit.textPtr<=n.ptr)return;
+  const size_t offset=(size_t)(textEdit.textPtr-n.ptr)-1;
+  if(offset<len)
+    memmove(n.ptr+offset,n.ptr+offset+1,len-offset); /* including NUL */
   editTextPrevChar();
-  name[20]='\0';
-  ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 SONGNAME backspace pos=%zu name='%s'\n",idx,name);fflush(inputLog);}
+  n.ptr[n.maxChars]='\0';
+  nameRedraw(&n);
 }
-static void songNameAdvance(void){
-  if(!isSongNameEdit())return;
-  /* A blank cell is confirmed as space. This also permits proceeding
-     through a name using X without first changing every character. */
+static void nameAdvance(void){
+  nameEdit_t n;
+  if(!currentNameEdit(&n))return;
   if(*textEdit.textPtr=='\0'){
     *textEdit.textPtr=' ';
-    if(textEdit.textPtr<song->header.name+20)textEdit.textPtr[1]='\0';
-    song->header.name[20]='\0';
-    ui.updateSongName=true;
+    if(textEdit.textPtr<n.ptr+n.maxChars-1)textEdit.textPtr[1]='\0';
+    n.ptr[n.maxChars]='\0';
+    nameRedraw(&n);
   }
   editTextNextChar();
 }
-static void songNameFinish(void){
-  if(!isSongNameEdit())return;
-  /* Native PT2 commit; importantly this does NOT clear the string. */
-  leaveTextEditMode(EDIT_TEXT_UPDATE);
-  ui.updateSongName=true;
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 SONGNAME saved '%s'\n",song->header.name);fflush(inputLog);}
+static void nameFinish(void){
+  nameEdit_t n;
+  if(!currentNameEdit(&n))return;
+  leaveTextEditMode(EDIT_TEXT_UPDATE); /* native PT2 commit */
+  nameRedraw(&n);
 }
 
 static void processHatAxis(unsigned code,int value);
@@ -473,7 +476,7 @@ static struct {
 static bool selecting;
 static int markRow, markCol, markPattern;
 
-/* PPT 0.3.10 POSITION LOOP. Packed into one atomic word because the audio
+/* PPT 0.3.12 POSITION LOOP. Packed into one atomic word because the audio
    callback cannot safely lock or read half-updated UI selection state.
    bits 0-7=first, 8-15=last, 16=range valid, 17=enabled. */
 enum { POS_LOOP_VALID=1<<16, POS_LOOP_ON=1<<17 };
@@ -518,7 +521,7 @@ static void beginPosMark(void){
   if(!posEditorActive())return;
   posMarking=true;posMarkStart=posMarkEnd=clamp((int)song->currPos,0,127);
   posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
 }
 static void confirmPosMark(void){
   if(!posEditorActive() || !posMarking)return;
@@ -531,14 +534,14 @@ static void confirmPosMark(void){
   const int hi=here>posMarkStart?here:posMarkStart;
   atomic_store_explicit(&positionLoop,lo|(hi<<8)|POS_LOOP_VALID|POS_LOOP_ON,memory_order_release);
   posMarking=false;posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
 }
 /* SELECT+Y is a full CLEAR, not an enable/disable toggle. The former
    toggle left a gray stored range behind and prevented intuitive remarking. */
 static void userClearPosLoop(void){
   if(!posEditorActive())return;
   clearPosLoop();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 POS_LOOP CLEARED\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 POS_LOOP CLEARED\n");fflush(inputLog);}
 }
 /* Move a selected loop endpoint without moving the engine's playback
    position. While STOPped, browse the normal PT2 list so the endpoint is
@@ -624,7 +627,7 @@ static void stashClip(int kind){
   memcpy(clip.cells,source,sizeof(clip.cells));
   endPatternWrite(locked);
   cancelSelection();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
     clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
 }
 static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
@@ -671,7 +674,7 @@ static void pasteClip(void){
   }
   endPatternWrite(locked);
   changed();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 PASTE kind=%d to patt=%d row=%d col=%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 PASTE kind=%d to patt=%d row=%d col=%d\n",
    clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
@@ -758,13 +761,13 @@ static void buttonEvent(int b,bool down){
   if(held[b]==down)return;
   held[b]=down;
   if(!down)return;
-  /* SONGNAME editing has priority over the normal X/Y mouse buttons.
+  /* MOD/SAMPLE NAME editing has priority over the normal X/Y mouse buttons.
      A mouse-down which originally entered the field is tracked and will
      still get a matching mouse-up when the key is released. */
-  if(isSongNameEdit()){
-    if(b==PPT_BTN_X){songNameAdvance();return;}
-    if(b==PPT_BTN_Y){songNameFinish();return;}
-    if(b==PPT_BTN_B){songNameBackspace();return;}
+  if(currentNameEdit(NULL)){
+    if(b==PPT_BTN_X){nameAdvance();return;}
+    if(b==PPT_BTN_Y){nameFinish();return;}
+    if(b==PPT_BTN_B){nameBackspace();return;}
   }
   if(b!=PPT_BTN_SELECT && held[PPT_BTN_SELECT])selectChordUsed=true;
   if(b==PPT_BTN_SELECT){selectChordUsed=false;return;}
@@ -888,9 +891,9 @@ static void releaseButton(int b){
   }
 }
 static void directionAction(int d){
-  if(isSongNameEdit()){
-    if(d==0)songNameCycle(+1);       /* UP -> next char */
-    else if(d==1)songNameCycle(-1);  /* DOWN -> previous char */
+  if(currentNameEdit(NULL)){
+    if(d==0)nameCycle(+1);       /* UP -> next char */
+    else if(d==1)nameCycle(-1);  /* DOWN -> previous char */
     else if(d==2)editTextPrevChar(); /* LEFT -> previous position */
     else editTextNextChar();         /* RIGHT -> next position */
     return;
@@ -954,7 +957,7 @@ void ppt_input_init(void){
   memset(axis,0,sizeof(axis));
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.10 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.12 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -1012,7 +1015,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.10 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.12 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -1023,7 +1026,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.10 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.12 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

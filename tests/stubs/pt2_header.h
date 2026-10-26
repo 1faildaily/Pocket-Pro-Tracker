@@ -1,3 +1,4 @@
+#define MOD_SAMPLES 31
 #pragma once
 #define MOD_ROWS 64
 #define MAX_PATTERNS 100

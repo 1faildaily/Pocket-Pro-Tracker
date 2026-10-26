@@ -1,3 +1,68 @@
+# Pocket Pro Tracker v0.3.13 — PALETA XCOPY (colors.ini)
+
+**Baza: v0.3.12 bez zmian w kodzie sterowania, audio i interfejsie.**
+
+Zmiana: dodano niezmodyfikowany plik `colors(2).ini` użytkownika jako
+`port/pocket_pro_tracker_pt2/colors.ini`. Jest kopiowany automatycznie
+podczas GitHub Actions do gotowego pakietu PortMaster.
+
+- Paleta interfejsu: 8 barw (czerwienie, czerń, biel, turkusowy kursor).
+- VU-meter: 48 barw.
+- SpectrumAnalyzer: 36 barw.
+- PT2 1.92 ładuje `colors.ini` z bieżącego katalogu przed sprawdzeniem lokalizacji HOME.
+- W launcherze już istnieje `cd "$GAMEDIR"`, więc plik w katalogu programu
+  zostanie znaleziony automatycznie po uruchomieniu.
+- `tests/check_palette.py` sprawdza strukturę pliku, a komenda `cmp` w workflow
+  sprawdza, że gotowy ZIP zawiera identyczny plik.
+
+### Instalacja przez GitHub Desktop
+
+Skopiuj zawartość SourceKitu do repozytorium i zastąp stare pliki.
+Summary: `PPT v0.3.13 - XCOPY custom palette bundled`
+Commit to main → Push origin → GitHub Actions → pobierz artefakt
+`PPT_v0.3.13_XCOPY_Palette_PortMaster_ARM64` → zainstaluj wewnętrzny
+`pocket_pro_tracker_pt2.zip` przez PortMaster.
+
+### Alternatywa bez rekompilacji
+
+PT2 wczytuje paletę z pliku konfiguracyjnego: wystarczy skopiować
+`colors.ini` do katalogu `ports/pocket_pro_tracker_pt2/` i zrestartować aplikację.
+Osobny plik ZIP z nakładką kolorystyczną jest dołączony do odpowiedzi.
+
+**Uwaga:** w Twojej palecie `[Palette]` kolor tekstu patternu to `000`
+(czarny). Zachowałem go dokładnie tak, jak w pliku. Jeśli napisy będą
+zbyt ciemne, zmień ostatnią wartość w tej sekcji na jaśniejszą (np. `FFF`).
+
+**Testy:** lokalne testy kodu PPT i walidacji palety; nie wykonano
+natywnej kompilacji ARM64, ponieważ zwykły GitHub Actions runner ARM64
+jest w Twoim workflow.
+
+---
+
+# Pocket Pro Tracker v0.3.12 — KARUZELA TYLKO MOD NAME I SAMPLE NAME
+
+**Baza: v0.3.10**, bez uniwersalnej karuzeli z v0.3.11. Ta poprawka
+rozszerza istniejącą karuzelę MOD NAME na **SAMPLE NAME**, pozostawiając
+inne pola tekstowe i liczbowe na natywnej obsłudze oryginalnego PT2.
+
+- Kliknij **X** w nazwę MOD-a albo bieżącego sampla, aby wejść do edycji.
+- **D-pad ↑/↓**: zmień literę/cyfrę; **←/→**: zmień pozycję.
+- **X**: zatwierdź znak i przejdź dalej, **B**: Backspace,
+  **Y**: zakończ i zachowaj nazwę w pamięci edytora.
+- MOD NAME: do **20 znaków**; SAMPLE NAME: do **22 znaków**.
+- POSITION, nazwy patternów, DISK OP, pola liczbowe i pozostałe pola
+  **nie otrzymują karuzeli**. Wszystkie funkcje, sterowanie i ekran
+  z v0.3.10 pozostają bez zmian.
+- **SAVE MODULE** nadal wymagane, aby utrwalić nazwy w pliku MOD.
+
+**GitHub Desktop Summary:** `PPT v0.3.12 - Carousel only for MOD and SAMPLE names`
+
+**Testy:** lokalne testy obsługi obu nazw, Backspace, długości buforów,
+wyłączenia w innych polach i patchera. Wymagany jeszcze build ARM64 w GitHub
+Actions oraz sprawdzenie na konsoli.
+
+---
+
 # Pocket Pro Tracker v0.3.10 — POSITION PLAYBACK FOLLOW + RESET LOOP
 
 Zmiany względem v0.3.9:

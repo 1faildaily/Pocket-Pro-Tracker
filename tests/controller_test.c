@@ -419,9 +419,45 @@ int main(void){
   assert(textEdit.textPtr==state.header.name+19 && textMovedRight==oldMoves);
   buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
   assert(!ui.editTextFlag && textCommitted==3);
-  /* Sample names and numeric text editing are unaffected. */
-  ui.editTextFlag=true;textEdit.object=PTB_SONGNAME+1;
-  assert(!isSongNameEdit());
+  /* v0.3.12: SAMPLE NAME has the same carousel with a 22-cell limit.
+     MOD, SAMPLE names only. Numeric/POS/DISK OP must never be intercepted. */
+  ui.editTextFlag=true;textEdit.object=PTB_SAMPLENAME;
+  editor.currSample=3;
+  char *sampleName=state.samples[3].text;
+  memset(sampleName,0,23);
+  textEdit.textStartPtr=sampleName;
+  textEdit.textEndPtr=sampleName+21;
+  textEdit.textPtr=sampleName;
+  assert(currentNameEdit(NULL));
+  directionAction(0);assert(!strcmp(sampleName,"a") && ui.updateCurrSampleName);
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(textEdit.textPtr==sampleName+1);
+  directionAction(0);assert(!strcmp(sampleName,"aa"));
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.editTextFlag && textCommitted==4 && !strcmp(sampleName,"aa"));
+  /* Removing a character from the middle must shift suffix, not just clear it. */
+  ui.editTextFlag=true;textEdit.object=PTB_SAMPLENAME;
+  strcpy(sampleName,"tracker");textEdit.textPtr=sampleName+4;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(!strcmp(sampleName,"traker") && textEdit.textPtr==sampleName+3);
+  /* 22-char name is guaranteed to remain terminated. */
+  memset(sampleName,'x',22);sampleName[22]='\0';
+  textEdit.textPtr=sampleName+21;
+  directionAction(0);assert(sampleName[22]=='\0');
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(textEdit.textPtr==sampleName+21);
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.editTextFlag && textCommitted==5);
+  /* Out-of-scope text fields retain original PT2 behavior, including
+     numeric and DISK OP input. */
+  ui.editTextFlag=true;textEdit.object=PTB_SAMPLENAME+1;
+  textEdit.textStartPtr=sampleName;textEdit.textPtr=sampleName;
+  assert(!currentNameEdit(NULL));
+  textEdit.object=PTB_SONGNAME;textEdit.type=TEXT_EDIT_STRING;
+  textEdit.textStartPtr=sampleName; /* wrong storage: must not activate */
+  assert(!currentNameEdit(NULL));
+  textEdit.type=99;textEdit.object=PTB_SAMPLENAME;
+  assert(!currentNameEdit(NULL));
   ui.editTextFlag=false;
 
   /* POSITION SELECT belongs to the PT2 POS editor, not pattern/field edit. */
@@ -497,6 +533,6 @@ int main(void){
   clearPosLoop();assert(ppt_loop_entry_style(9)==0 && ppt_loop_redirect(12,16)==12);
   assert(state.header.patternTable[8]==18 && state.header.patternTable[9]==19);
 
-  puts("PPT v0.3.10: POSITION playback follow, independent mark and full clear OK");
+  puts("PPT v0.3.12: PT2 v0.3.10 playback + MOD/SAMPLE name carousel OK");
   return 0;
 }

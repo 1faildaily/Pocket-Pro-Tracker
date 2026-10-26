@@ -1,0 +1,1 @@
+SHA256(colors.ini) e5552d76b03c11bee3a0a9aab77d69fb0d8a535c2b7957cb34d1663114ee8d8b

@@ -5,3 +5,4 @@ void sampleUpButton(void);
 void sampleDownButton(void);
 
 #define PTB_SONGNAME 1
+#define PTB_SAMPLENAME 2
