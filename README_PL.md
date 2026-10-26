@@ -1,53 +1,28 @@
-# Pocket Pro Tracker v0.3.22 - sample do 128 KB
+# Pocket Pro Tracker v0.3.23 - domyślne MONO + sample 128 KB
 
-W paczce wynikowej protracker.ini ma 64K_LIMIT=FALSE.
-Limit jednego sampla: 131070 bajtów (128 KB minus 2 bajty).
-Zmiana dotyczy ładowania i edycji, dzięki czemu zapis zachowuje dłuższe sample.
-Skrót MENU + X przez 2 sekundy -> 0% MONO i pozostałe funkcje są zachowane.
-
-WAŻNE: skopiuj także nowy protracker.ini z paczki PortMaster.
-Po aktualizacji uruchom PPT ponownie i wczytaj ORYGINALNY moduł.
-Wcześniej uciętych danych nie odzyskasz z już skróconego zapisu.
-Sample >64 KB wymagają odtwarzacza obsługującego ten rozszerzony zakres.
-
-GitHub Desktop: zastąp pliki wraz z .github -> Commit -> Push.
-Artefakt: PPT_v0.3.22_128KB_Samples_ARM64.
-
-Weryfikacja: testy kontrolera i integracji, kontrola konfiguracji w workflow.
-GitHub Actions dodatkowo sprawdza 64K_LIMIT=FALSE w końcowym ZIP-ie.
-Kompilacja ARM64 i test zapis/odczyt na urządzeniu wymagają sprawdzenia.
-
----
-Dokumentacja poprzedniej wersji:
-
-# Pocket Pro Tracker v0.3.21 - MENU + X: MONO
-
-Baza: v0.3.20, wszystkie dotychczasowe funkcje zachowane.
-
-Przytrzymaj MENU, następnie X, razem przez 2 sekundy.
-Separacja stereo zostanie ustawiona na 0% przez natywny mikser PT2.
-STATUS: MONO - STEREO SEP 0%.
-To ustawienie mono, nie przełącznik mono/stereo. Kolejne użycie ponownie ustawia 0%.
-Działa podczas odtwarzania bez zatrzymywania transportu.
-Nie zmienia pliku MOD ani konfiguracji startowej; po restarcie obowiązuje protracker.ini.
-X wciśnięty przy trzymanym MENU nie klika ani nie przesuwa karuzeli.
-Puszczenie dowolnego przycisku przed 2 sekundami anuluje odliczanie.
-Jeśli X naciśnięto przed MENU, jego wcześniejszy klik już wystąpił: używaj MENU jako pierwszego.
-MENU musi docierać do programu (system nie może go przechwytywać).
+Usunięto skrót MENU + X i całe odliczanie 2 sekund.
+Przywrócono obsługę kontrolera z v0.3.20.
+MONO jest ustawione w protracker.ini: STEREOSEPARATION=0.
+Obsługa długich sampli zachowana: 64K_LIMIT=FALSE (do 131070 bajtów).
+Pozostałe funkcje v0.3.20 pozostają bez zmian.
 
 ## Instalacja
-Rozpakuj całą paczkę do repozytorium, włącznie z .github, zastępując pliki.
-GitHub Desktop: Commit to main -> Push origin.
-Artefakt GitHub Actions: PPT_v0.3.21_MenuX_Mono_ARM64.
-W nim pocket_pro_tracker_pt2.zip do instalacji przez PortMaster.
+Zastąp pliki repozytorium, włącznie z .github. Commit -> Push.
+Artefakt: PPT_v0.3.23_DefaultMono_128KB_ARM64.
+Zainstaluj zawarty pocket_pro_tracker_pt2.zip, koniecznie podmieniając także protracker.ini.
+Zamknij PPT przed podmianą i uruchom ponownie po aktualizacji.
+Wczytaj oryginalne MOD-y, jeśli wcześniejszy zapis uciął sample.
+
+MENU + X nie ma już funkcji MONO. Jeśli system muOS przechwytuje tę kombinację,
+usunięcie skrótu w aplikacji nie wyłącza skrótu systemowego; nie używaj jej.
+Bez logu nie ustalono przyczyny zgłoszonego natychmiastowego zamknięcia.
 
 ## Weryfikacja
-Testy kontrolera obejmują próg 1999/2000 ms, jednokrotne wykonanie,
-anulowanie po puszczeniu, ponowne uzbrojenie i blokadę kliknięcia X.
-Kompilacja ARM64 i test na urządzeniu wymagają sprawdzenia.
+Testy kontrolera i integracji; kontrola usunięcia skrótu oraz obu ustawień.
+GitHub Actions sprawdza oba ustawienia także w końcowym ZIP-ie.
+Kompilacja ARM64 i odsłuch na urządzeniu pozostają do sprawdzenia.
 
----
-Dokumentacja funkcji bazowych v0.3.20:
+## Funkcje bazowe
 
 # Pocket Pro Tracker v0.3.20 — RANGE ACCELERATION + RESAMPLE NOTE
 

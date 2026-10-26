@@ -135,3 +135,15 @@ for start,end,length in [(10,30,100),(11,35,100),(0,200,200),(1,2,200)]:
   assert (start,end)==(1,2)
 print('Sampler LOOP range alignment and short-range rejection tested')
 PY_LOOP
+
+python3 - <<'PY_MONO'
+from pathlib import Path
+s=Path('patch/ppt_input.c').read_text()
+assert 'monoHold' not in s and 'monoXConsumed' not in s
+w=Path('.github/workflows/build-ppt-arm64.yml').read_text()
+assert "s/^STEREOSEPARATION=.*/STEREOSEPARATION=0/" in w
+assert "s/^64K_LIMIT=.*/64K_LIMIT=FALSE/" in w
+assert "grep -qx 'STEREOSEPARATION=0'" in w
+assert "grep -qx '64K_LIMIT=FALSE'" in w
+print('Default MONO, 128KB packaging and MENU+X removal verified')
+PY_MONO

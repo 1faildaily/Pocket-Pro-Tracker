@@ -63,8 +63,6 @@ void samplerSamCopy(void){samplerNewSlots++;samplerShiftWasHeld=keyb.shiftPresse
 void displaySample(void){samplerRangeRenders++;}
 void updateSamplePos(void){samplerPosUpdates++;}
 void displayErrorMsg(const char *s){(void)s;samplerErrs++;}
-static int monoCalls;
-void audioSetStereoSeparation(uint8_t percentage){assert(percentage==0);assert(audio.locked);monoCalls++;}
 static uint32_t fakeTicks;
 unsigned int SDL_GetTicks(void){return fakeTicks;}
 static SDL_Event lastEvent; static int eventsPushed;
@@ -73,21 +71,6 @@ unsigned int SDL_GetMouseState(int*x,int*y){*x=0;*y=0;return 0;}
 void SDL_WarpMouseInWindow(SDL_Window*w,int x,int y){(void)w;(void)x;(void)y;}
 #include "../patch/ppt_input.c"
 int main(void){
-  /* Continuous hold, exact boundary, one-shot, cancellation, click suppression. */
-  int beforeEvents=eventsPushed;
-  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_X,true);
-  updateMonoHold(1999);assert(monoCalls==0);
-  updateMonoHold(2000);assert(monoCalls==1 && !audio.locked);
-  assert(!strcmp(lastStatusMessage,"MONO - STEREO SEP 0%"));
-  updateMonoHold(9000);assert(monoCalls==1);
-  releaseButton(PPT_BTN_X);releaseButton(PPT_BTN_MENU);
-  assert(eventsPushed==beforeEvents);
-  fakeTicks=10000;buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_X,true);
-  updateMonoHold(11999);releaseButton(PPT_BTN_MENU);
-  updateMonoHold(13000);assert(monoCalls==1);releaseButton(PPT_BTN_X);
-  fakeTicks=14000;buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_X,true);
-  updateMonoHold(16000);assert(monoCalls==2);
-  releaseButton(PPT_BTN_X);releaseButton(PPT_BTN_MENU);fakeTicks=0;
   static note_t patt[64*4];
   memset(&state,0,sizeof(state));
   state.patterns[0]=patt;
