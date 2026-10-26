@@ -1,3 +1,32 @@
+# Pocket Pro Tracker v0.3.21 - MENU + X: MONO
+
+Baza: v0.3.20, wszystkie dotychczasowe funkcje zachowane.
+
+Przytrzymaj MENU, następnie X, razem przez 2 sekundy.
+Separacja stereo zostanie ustawiona na 0% przez natywny mikser PT2.
+STATUS: MONO - STEREO SEP 0%.
+To ustawienie mono, nie przełącznik mono/stereo. Kolejne użycie ponownie ustawia 0%.
+Działa podczas odtwarzania bez zatrzymywania transportu.
+Nie zmienia pliku MOD ani konfiguracji startowej; po restarcie obowiązuje protracker.ini.
+X wciśnięty przy trzymanym MENU nie klika ani nie przesuwa karuzeli.
+Puszczenie dowolnego przycisku przed 2 sekundami anuluje odliczanie.
+Jeśli X naciśnięto przed MENU, jego wcześniejszy klik już wystąpił: używaj MENU jako pierwszego.
+MENU musi docierać do programu (system nie może go przechwytywać).
+
+## Instalacja
+Rozpakuj całą paczkę do repozytorium, włącznie z .github, zastępując pliki.
+GitHub Desktop: Commit to main -> Push origin.
+Artefakt GitHub Actions: PPT_v0.3.21_MenuX_Mono_ARM64.
+W nim pocket_pro_tracker_pt2.zip do instalacji przez PortMaster.
+
+## Weryfikacja
+Testy kontrolera obejmują próg 1999/2000 ms, jednokrotne wykonanie,
+anulowanie po puszczeniu, ponowne uzbrojenie i blokadę kliknięcia X.
+Kompilacja ARM64 i test na urządzeniu wymagają sprawdzenia.
+
+---
+Dokumentacja funkcji bazowych v0.3.20:
+
 # Pocket Pro Tracker v0.3.20 — RANGE ACCELERATION + RESAMPLE NOTE
 
 Baza: **PPT v0.3.19**. Zachowane są wszystkie poprzednie funkcje, w tym niezależne krawędzie RANGE, LIVE EDIT, ghost playhead, POSITION LOOP, kopiowanie LSDJ, EDITSKIP, pełnoekranowy widok, paleta XCOPY RED i ukryte cztery VU-metry kanałów.
