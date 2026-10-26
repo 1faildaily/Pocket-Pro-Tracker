@@ -1,3 +1,25 @@
+# Pocket Pro Tracker v0.3.22 - sample do 128 KB
+
+W paczce wynikowej protracker.ini ma 64K_LIMIT=FALSE.
+Limit jednego sampla: 131070 bajtów (128 KB minus 2 bajty).
+Zmiana dotyczy ładowania i edycji, dzięki czemu zapis zachowuje dłuższe sample.
+Skrót MENU + X przez 2 sekundy -> 0% MONO i pozostałe funkcje są zachowane.
+
+WAŻNE: skopiuj także nowy protracker.ini z paczki PortMaster.
+Po aktualizacji uruchom PPT ponownie i wczytaj ORYGINALNY moduł.
+Wcześniej uciętych danych nie odzyskasz z już skróconego zapisu.
+Sample >64 KB wymagają odtwarzacza obsługującego ten rozszerzony zakres.
+
+GitHub Desktop: zastąp pliki wraz z .github -> Commit -> Push.
+Artefakt: PPT_v0.3.22_128KB_Samples_ARM64.
+
+Weryfikacja: testy kontrolera i integracji, kontrola konfiguracji w workflow.
+GitHub Actions dodatkowo sprawdza 64K_LIMIT=FALSE w końcowym ZIP-ie.
+Kompilacja ARM64 i test zapis/odczyt na urządzeniu wymagają sprawdzenia.
+
+---
+Dokumentacja poprzedniej wersji:
+
 # Pocket Pro Tracker v0.3.21 - MENU + X: MONO
 
 Baza: v0.3.20, wszystkie dotychczasowe funkcje zachowane.
