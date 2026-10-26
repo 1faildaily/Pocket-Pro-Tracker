@@ -60,7 +60,8 @@ void samplerSamCopy(void){samplerNewSlots++;samplerShiftWasHeld=keyb.shiftPresse
 void displaySample(void){samplerRangeRenders++;}
 void updateSamplePos(void){samplerPosUpdates++;}
 void displayErrorMsg(const char *s){(void)s;samplerErrs++;}
-unsigned int SDL_GetTicks(void){return 0;}
+static uint32_t fakeTicks;
+unsigned int SDL_GetTicks(void){return fakeTicks;}
 static SDL_Event lastEvent; static int eventsPushed;
 int SDL_PushEvent(SDL_Event *event){lastEvent=*event;eventsPushed++;return 1;}
 unsigned int SDL_GetMouseState(int*x,int*y){*x=0;*y=0;return 0;}
@@ -101,16 +102,23 @@ int main(void){
   assert(playCalls==initialPlayCount);
   releaseButton(PPT_BTN_SELECT);
   assert(!ppt_live_edit_active());
-  /* Modifier must not change sampler RANGE actions, POS selection or
-     grey pattern-block mark controls. */
+  /* Sample RANGE has separate boundaries. In SAMPLER:
+     SHIFT/SELECT+LEFT or RIGHT moves START; MENU+LEFT or RIGHT moves END.
+     Neither shortcut changes PATTERN EDITSKIP. */
   editor.editMoveAdd=4;
-  editor.currSample=0; state.samples[0].length=200;
+  editor.currSample=0;state.samples[0].length=200;
   ui.samplerScreenShown=true;
   editor.markStartOfs=40;editor.markEndOfs=100;
   buttonEvent(PPT_BTN_SELECT,true);
-  directionAction(2);
-  assert(editor.markStartOfs==39 && editor.editMoveAdd==4);
+  directionAction(2);assert(editor.markStartOfs==30 && editor.markEndOfs==100);
+  directionAction(3);assert(editor.markStartOfs==40 && editor.markEndOfs==100);
+  assert(editor.editMoveAdd==4);
   releaseButton(PPT_BTN_SELECT);
+  buttonEvent(PPT_BTN_MENU,true);
+  directionAction(2);assert(editor.markStartOfs==40 && editor.markEndOfs==90);
+  directionAction(3);assert(editor.markStartOfs==40 && editor.markEndOfs==100);
+  assert(editor.editMoveAdd==4);
+  releaseButton(PPT_BTN_MENU);
   ui.samplerScreenShown=false;
   /* POSITION EDIT still browses positions, never touches EDITSKIP. */
   ui.posEdScreenShown=true; state.header.songLength=16;
@@ -154,20 +162,90 @@ int main(void){
   buttonEvent(PPT_BTN_SELECT,true);
   buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
   assert(samplerRangeAuditions==1 && samplerWholeAuditions==1);
-  /* SELECT+LEFT -> start -001 byte, SELECT+RIGHT -> end +001 byte */
-  directionAction(2);assert(editor.markStartOfs==39 && editor.markEndOfs==100);
-  directionAction(3);assert(editor.markStartOfs==39 && editor.markEndOfs==101);
-  assert(samplerRangeRenders==2 && samplerPosUpdates==2);
+  /* Both RANGE edges move left and right by 10 per tap. */
+  fakeTicks=0;
+  directionEvent(2,true); assert(editor.markStartOfs==30 && editor.markEndOfs==100);
+  directionEvent(2,false);
+  directionEvent(3,true); assert(editor.markStartOfs==40 && editor.markEndOfs==100);
+  directionEvent(3,false);
+  releaseButton(PPT_BTN_SELECT);
+  buttonEvent(PPT_BTN_MENU,true);
+  directionEvent(2,true); assert(editor.markStartOfs==40 && editor.markEndOfs==90);
+  directionEvent(2,false);
+  directionEvent(3,true); assert(editor.markStartOfs==40 && editor.markEndOfs==100);
+  directionEvent(3,false);
+  assert(samplerRangeRenders==4 && samplerPosUpdates==4);
+  /* MENU wins over SELECT if both are held; only the END edge moves. */
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(3);
+  assert(editor.markStartOfs==40 && editor.markEndOfs==110);
+  releaseButton(PPT_BTN_SELECT);
+  /* Timed acceleration works for MENU+RIGHT to grow END (10/20/50/100).
+     On release and a new press the step resets to 10. */
+  editor.markStartOfs=50;editor.markEndOfs=70;
+  state.samples[0].length=1000;
+  fakeTicks=10000;
+  directionEvent(3,true);assert(editor.markStartOfs==50 && editor.markEndOfs==80);
+  fakeTicks=10100;repeatDirections(fakeTicks);assert(editor.markEndOfs==80);
+  fakeTicks=10281;repeatDirections(fakeTicks);assert(editor.markEndOfs==90);
+  fakeTicks=10601;repeatDirections(fakeTicks);assert(editor.markEndOfs==110);
+  fakeTicks=11201;repeatDirections(fakeTicks);assert(editor.markEndOfs==160);
+  fakeTicks=12001;repeatDirections(fakeTicks);assert(editor.markEndOfs==260);
+  directionEvent(3,false);
+  fakeTicks=12100;directionEvent(3,true);
+  assert(editor.markEndOfs==270); /* release/repress resets the speed */
+  directionEvent(3,false);
+  /* MENU+LEFT contracts END but cannot cross START+2. */
+  editor.markStartOfs=90;editor.markEndOfs=120;
+  fakeTicks=13000;directionEvent(2,true);assert(editor.markEndOfs==110);
+  fakeTicks=15001;repeatDirections(fakeTicks);assert(editor.markEndOfs==92);
+  directionEvent(2,false);
+  releaseButton(PPT_BTN_MENU);
+  /* Accelerated SELECT+RIGHT approaches END-2, without moving END. */
+  buttonEvent(PPT_BTN_SELECT,true);
+  editor.markStartOfs=70;editor.markEndOfs=90;
+  fakeTicks=16000;directionEvent(3,true);assert(editor.markStartOfs==80);
+  fakeTicks=18001;repeatDirections(fakeTicks);assert(editor.markStartOfs==88);
+  directionEvent(3,false);
+  assert(editor.markEndOfs==90);
+  /* SELECT+LEFT clamps the START edge to zero. */
+  editor.markStartOfs=8;editor.markEndOfs=90;
+  directionAction(2);assert(editor.markStartOfs==0 && editor.markEndOfs==90);
+  releaseButton(PPT_BTN_SELECT);
+  /* Repeating direction without SELECT must not alter sample selection. */
+  releaseButton(PPT_BTN_SELECT);
+  int32_t before=editor.markEndOfs;
+  fakeTicks=16000;directionEvent(3,true);fakeTicks=18000;repeatDirections(fakeTicks);
+  assert(editor.markEndOfs==before);directionEvent(3,false);
+  buttonEvent(PPT_BTN_SELECT,true);
   releaseButton(PPT_BTN_SELECT);
   buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
   assert(samplerNewSlots==1 && samplerShiftWasHeld && !keyb.shiftPressed);
   editor.markStartOfs=-1;
   buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
   assert(samplerNewSlots==1 && samplerErrs==1);
+  state.samples[0].length=200;
   editor.markStartOfs=0;editor.markEndOfs=200;
-  buttonEvent(PPT_BTN_SELECT,true);directionAction(2);directionAction(3);
-  assert(editor.markStartOfs==0 && editor.markEndOfs==200);
+  buttonEvent(PPT_BTN_SELECT,true);directionAction(2);
+  directionAction(3);assert(editor.markStartOfs==10 && editor.markEndOfs==200);
   releaseButton(PPT_BTN_SELECT);
+  buttonEvent(PPT_BTN_MENU,true);
+  directionAction(3);assert(editor.markEndOfs==200);
+  editor.markStartOfs=193;editor.markEndOfs=195;
+  directionAction(3);assert(editor.markEndOfs==200);
+  assert(editor.markStartOfs==193);
+  directionAction(2);assert(editor.markEndOfs==195);
+  releaseButton(PPT_BTN_MENU);
+  /* Minimum 2-byte selection maintained at both boundaries. */
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(3);assert(editor.markStartOfs==193 && editor.markEndOfs==195);
+  releaseButton(PPT_BTN_SELECT);
+  /* Invalid/empty selection must not alter offsets. */
+  editor.markStartOfs=-1;editor.markEndOfs=195;
+  buttonEvent(PPT_BTN_MENU,true);
+  int errsBefore=samplerErrs;
+  directionAction(2);assert(samplerErrs==errsBefore+1 && editor.markEndOfs==195);
+  releaseButton(PPT_BTN_MENU);
   ui.samplerScreenShown=false;
   /* Physical calibration unchanged. */
   assert(rawMap[PPT_BTN_SELECT]==310 && rawMap[PPT_BTN_START]==311);

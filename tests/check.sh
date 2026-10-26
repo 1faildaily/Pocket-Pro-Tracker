@@ -111,9 +111,12 @@ a=Path('patch/apply_patch.py').read_text()
 assert 'samplerPlayWaveform();' in p
 assert 'samplerPlayRange();' in p
 assert 'samplerSamCopy();' in p
-assert 'if(direction<0)start=start>0?start-1:0;' in p
+assert 'if(editStart)start=clamp(start+delta,0,end-2);' in p
+assert 'else end=clamp(end+delta,start+2,length);' in p
+assert 'pptSamplerMoveRange(!held[PPT_BTN_MENU],d==2?-1:1,samplerRangeStep(d));' in p
+assert 'return 10;' in p and 'if(elapsed>=2000)return 100;' in p
 assert 'if (editor.markStartOfs >= 0 &&' in a
-print('Sampler RANGE / preview / copy / loop patch verified')
+print('Sampler independent RANGE edges / accelerated preview / copy / loop patch verified')
 PY_SAMPLE
 
 python3 - <<'PY_LOOP'

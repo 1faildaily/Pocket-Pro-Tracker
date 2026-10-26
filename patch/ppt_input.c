@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.17 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.19 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -61,6 +61,7 @@ static const int rawMap[C_COUNT] = {310, 311, 308, 314, 309, 315, 304, 305, 307,
 static int fds[DEVICES];
 static bool held[C_COUNT], dir[4], dirRepeat[4];
 static uint32_t nextAt[4];
+static uint32_t dirDownAt[4]; /* absolute key-down timestamp for SAMPLER RANGE acceleration */
 static int lastPitch=24; /* C-3, original PT2 uses C-1..B-3 */
 static uint8_t lastCmd=0, lastParam=0;
 /* L1/R1 act on release, so a chord never switches patterns unintentionally. */
@@ -99,7 +100,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.17 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.19 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -129,7 +130,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.17 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.19 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -219,7 +220,7 @@ static void rightStickOpenView(int target)
   displayMainScreen();
   if(target==PPT_VIEW_SAMPLER && !ui.samplerScreenShown)samplerScreen();
   if(inputLog){
-    fprintf(inputLog,"PPT 0.3.17 VIEW %s playing=%d\n",
+    fprintf(inputLog,"PPT 0.3.19 VIEW %s playing=%d\n",
       target==PPT_VIEW_POSITION?"POSITION":target==PPT_VIEW_PATTERN?"PATTERN":
       target==PPT_VIEW_DISK?"DISKOP":"SAMPLER",(int)editor.songPlaying);
     fflush(inputLog);
@@ -555,7 +556,7 @@ static struct {
 static bool selecting;
 static int markRow, markCol, markPattern;
 
-/* PPT 0.3.17 POSITION LOOP. Packed into one atomic word because the audio
+/* PPT 0.3.19 POSITION LOOP. Packed into one atomic word because the audio
    callback cannot safely lock or read half-updated UI selection state.
    bits 0-7=first, 8-15=last, 16=range valid, 17=enabled. */
 enum { POS_LOOP_VALID=1<<16, POS_LOOP_ON=1<<17 };
@@ -600,7 +601,7 @@ static void beginPosMark(void){
   if(!posEditorActive())return;
   posMarking=true;posMarkStart=posMarkEnd=clamp((int)song->currPos,0,127);
   posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
 }
 static void confirmPosMark(void){
   if(!posEditorActive() || !posMarking)return;
@@ -613,14 +614,14 @@ static void confirmPosMark(void){
   const int hi=here>posMarkStart?here:posMarkStart;
   atomic_store_explicit(&positionLoop,lo|(hi<<8)|POS_LOOP_VALID|POS_LOOP_ON,memory_order_release);
   posMarking=false;posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
 }
 /* SELECT+Y is a full CLEAR, not an enable/disable toggle. The former
    toggle left a gray stored range behind and prevented intuitive remarking. */
 static void userClearPosLoop(void){
   if(!posEditorActive())return;
   clearPosLoop();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP CLEARED\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 POS_LOOP CLEARED\n");fflush(inputLog);}
 }
 /* Move a selected loop endpoint without moving the engine's playback
    position. While STOPped, browse the normal PT2 list so the endpoint is
@@ -706,7 +707,7 @@ static void stashClip(int kind){
   memcpy(clip.cells,source,sizeof(clip.cells));
   endPatternWrite(locked);
   cancelSelection();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
     clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
 }
 static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
@@ -753,7 +754,7 @@ static void pasteClip(void){
   }
   endPatternWrite(locked);
   changed();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 PASTE kind=%d to patt=%d row=%d col=%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 PASTE kind=%d to patt=%d row=%d col=%d\n",
    clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
@@ -851,22 +852,38 @@ static void pptSamplerCopyToFreeSlot(void){
   samplerSamCopy();
   keyb.shiftPressed=previousShift;
 }
-static void pptSamplerMoveRange(int direction){
+/* PPT v0.3.19 sampler RANGE: single tap = 10 raw sample offsets.
+   Holding a direction accelerates according to elapsed wall-clock time
+   since this D-pad direction was first pressed. No acceleration carries
+   over to the next press (directionEvent resets dirDownAt on release). */
+static int samplerRangeStep(int d){
+  if(d!=2 && d!=3)return 10;
+  if(!dir[d])return 10; /* direct action / single tap */
+  const uint32_t elapsed=SDL_GetTicks()-dirDownAt[d]; /* rollover-safe */
+  if(elapsed>=2000)return 100;
+  if(elapsed>=1200)return 50;
+  if(elapsed>=600)return 20;
+  return 10;
+}
+/* Move EITHER RANGE boundary independently; never move the other boundary.
+   SELECT+LEFT/RIGHT controls the left boundary, MENU+LEFT/RIGHT the right.
+   Keep at least two sample bytes between them to preserve a valid slice for
+   PT2's sampler copy and its MOD-format LOOP ON operation. */
+static void pptSamplerMoveRange(bool editStart,int direction,int step){
   if(!song || editor.sampleZero || editor.currSample<0 || editor.currSample>=MOD_SAMPLES)return;
   const int32_t length=song->samples[editor.currSample].length;
-  if(editor.markStartOfs<0 || editor.markEndOfs<=editor.markStartOfs || length<2){
-    displayErrorMsg("NO RANGE SELECTED");return;
-  }
-  /* 001 displayed sample offset = 1 raw 8-bit sample byte.
-     LOOP ON separately aligns selected endpoints to MOD word boundaries. */
   int32_t start=editor.markStartOfs;
   int32_t end=editor.markEndOfs;
-  if(direction<0)start=start>0?start-1:0;
-  else end=end<length?end+1:length;
-  /* Redraw the waveform WITH its new selection (redrawSample would CLEAR it). */
+  if(start<0 || end-start<2 || end>length || length<2){
+    displayErrorMsg("NO RANGE SELECTED");return;
+  }
+  const int32_t amount=step>0?step:10;
+  const int32_t delta=direction<0?-amount:amount;
+  if(editStart)start=clamp(start+delta,0,end-2);
+  else end=clamp(end+delta,start+2,length);
   editor.markStartOfs=start;
   editor.markEndOfs=end;
-  editor.samplePos=direction<0?start:end;
+  editor.samplePos=editStart?start:end;
   displaySample();
   updateSamplePos();
 }
@@ -1025,10 +1042,13 @@ static void directionAction(int d){
   }
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
   if(ui.samplerScreenShown && !ui.editTextFlag){
-    /* SELECT+LEFT: move RANGE start -001 word; SELECT+RIGHT: extend
-       RANGE end +001 word, without affecting pattern selection. */
-    if(held[PPT_BTN_SELECT] && (d==2 || d==3))
-      pptSamplerMoveRange(d==2?-1:1);
+    /* Both edges are adjustable in either direction, always by the same
+       accelerated step (10/20/50/100 sample bytes):
+       SELECT+LEFT/RIGHT = left/start edge; MENU+LEFT/RIGHT = right/end edge.
+       MENU wins if both modifiers are held. These shortcuts apply only to
+       SAMPLER, so SELECT+D-pad still controls EDITSKIP in PATTERN EDIT. */
+    if((held[PPT_BTN_MENU] || held[PPT_BTN_SELECT]) && (d==2 || d==3))
+      pptSamplerMoveRange(!held[PPT_BTN_MENU],d==2?-1:1,samplerRangeStep(d));
     return;
   }
   if(posEditorActive()){
@@ -1081,8 +1101,19 @@ static void directionEvent(int d,bool down){
   if(!down){dir[d]=false;dirRepeat[d]=false;return;}
   if(dir[d])return;
   dir[d]=true;dirRepeat[d]=false;
-  nextAt[d]=SDL_GetTicks()+INITIAL_DELAY;
+  dirDownAt[d]=SDL_GetTicks();
+  nextAt[d]=dirDownAt[d]+INITIAL_DELAY;
   directionAction(d);
+}
+/* Run the hardware D-pad auto-repeat. A single tap is always exactly
+   10 offsets; acceleration is driven by samplerRangeStep() and key-down time. */
+static void repeatDirections(uint32_t now){
+  for(int d=0;d<4;d++){
+    if(dir[d] && (int32_t)(now-nextAt[d])>=0){
+      directionAction(d);
+      nextAt[d]=now+REPEAT_DELAY;dirRepeat[d]=true;
+    }
+  }
 }
 static void processHatAxis(unsigned code,int value){
   diagnostic("DPAD-HAT",(int)code,value);
@@ -1099,11 +1130,12 @@ void ppt_input_init(void){
   clearPosLoop();
   atomic_store(&posBrowseActive,false);
   memset(held,0,sizeof(held));memset(dir,0,sizeof(dir));
+  memset(dirDownAt,0,sizeof(dirDownAt));memset(dirRepeat,0,sizeof(dirRepeat));
   memset(axis,0,sizeof(axis));
   rightStickArmed=true;
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.17 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.19 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -1161,7 +1193,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.17 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.19 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -1172,20 +1204,15 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.17 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.19 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }
       }
     }
   }
-  uint32_t now=SDL_GetTicks();
-  for(int d=0;d<4;d++){
-    if(dir[d] && (int32_t)(now-nextAt[d])>=0){
-      directionAction(d);
-      nextAt[d]=now+REPEAT_DELAY;dirRepeat[d]=true;
-    }
-  }
+  const uint32_t now=SDL_GetTicks();
+  repeatDirections(now);
   updateRightStickViews();
   updateAnalogMouse();
   applyVirtualMouse();
