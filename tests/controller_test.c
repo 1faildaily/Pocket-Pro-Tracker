@@ -34,6 +34,9 @@ void updateWindowTitle(bool modified){state.modified=modified;titleUpdates++;}
 void updateCurrSample(void){sampleUIUpdates++;}
 void sampleUpButton(void){if(editor.currSample<30)editor.currSample++;updateCurrSample();}
 void sampleDownButton(void){if(editor.currSample>0)editor.currSample--;updateCurrSample();}
+static int previousPointerModeCalls, previousStatusCalls;
+void pointerSetPreviousMode(void){previousPointerModeCalls++;}
+void setPrevStatusMessage(void){previousStatusCalls++;}
 static int pointerModeLast;
 void pointerSetMode(uint8_t mode,bool carry){assert((mode==POINTER_MODE_PLAY || mode==POINTER_MODE_IDLE || mode==POINTER_MODE_EDIT) && carry==DO_CARRY);pointerModeLast=mode;pointerModeCalls++;}
 void statusAllRight(void){statusCalls++;}
@@ -110,12 +113,12 @@ int main(void){
   ui.samplerScreenShown=true;
   editor.markStartOfs=40;editor.markEndOfs=100;
   buttonEvent(PPT_BTN_SELECT,true);
-  directionAction(2);assert(editor.markStartOfs==30 && editor.markEndOfs==100);
+  directionAction(2);assert(editor.markStartOfs==39 && editor.markEndOfs==100);
   directionAction(3);assert(editor.markStartOfs==40 && editor.markEndOfs==100);
   assert(editor.editMoveAdd==4);
   releaseButton(PPT_BTN_SELECT);
   buttonEvent(PPT_BTN_MENU,true);
-  directionAction(2);assert(editor.markStartOfs==40 && editor.markEndOfs==90);
+  directionAction(2);assert(editor.markStartOfs==40 && editor.markEndOfs==99);
   directionAction(3);assert(editor.markStartOfs==40 && editor.markEndOfs==100);
   assert(editor.editMoveAdd==4);
   releaseButton(PPT_BTN_MENU);
@@ -162,54 +165,56 @@ int main(void){
   buttonEvent(PPT_BTN_SELECT,true);
   buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
   assert(samplerRangeAuditions==1 && samplerWholeAuditions==1);
-  /* Both RANGE edges move left and right by 10 per tap. */
+  /* Both RANGE edges move left and right by 1 per tap. */
   fakeTicks=0;
-  directionEvent(2,true); assert(editor.markStartOfs==30 && editor.markEndOfs==100);
+  directionEvent(2,true); assert(editor.markStartOfs==39 && editor.markEndOfs==100);
   directionEvent(2,false);
   directionEvent(3,true); assert(editor.markStartOfs==40 && editor.markEndOfs==100);
   directionEvent(3,false);
   releaseButton(PPT_BTN_SELECT);
   buttonEvent(PPT_BTN_MENU,true);
-  directionEvent(2,true); assert(editor.markStartOfs==40 && editor.markEndOfs==90);
+  directionEvent(2,true); assert(editor.markStartOfs==40 && editor.markEndOfs==99);
   directionEvent(2,false);
   directionEvent(3,true); assert(editor.markStartOfs==40 && editor.markEndOfs==100);
   directionEvent(3,false);
   assert(samplerRangeRenders==4 && samplerPosUpdates==4);
-  /* MENU wins over SELECT if both are held; only the END edge moves. */
+  /* MENU has priority over SELECT; only the END boundary moves. */
   buttonEvent(PPT_BTN_SELECT,true);
   directionAction(3);
-  assert(editor.markStartOfs==40 && editor.markEndOfs==110);
+  assert(editor.markStartOfs==40 && editor.markEndOfs==101);
   releaseButton(PPT_BTN_SELECT);
-  /* Timed acceleration works for MENU+RIGHT to grow END (10/20/50/100).
-     On release and a new press the step resets to 10. */
+  /* Hold acceleration 1 -> 2 -> 5 -> 10 -> 50 -> 100.
+     A fresh press always restarts at 1. */
   editor.markStartOfs=50;editor.markEndOfs=70;
   state.samples[0].length=1000;
   fakeTicks=10000;
-  directionEvent(3,true);assert(editor.markStartOfs==50 && editor.markEndOfs==80);
-  fakeTicks=10100;repeatDirections(fakeTicks);assert(editor.markEndOfs==80);
-  fakeTicks=10281;repeatDirections(fakeTicks);assert(editor.markEndOfs==90);
-  fakeTicks=10601;repeatDirections(fakeTicks);assert(editor.markEndOfs==110);
-  fakeTicks=11201;repeatDirections(fakeTicks);assert(editor.markEndOfs==160);
-  fakeTicks=12001;repeatDirections(fakeTicks);assert(editor.markEndOfs==260);
+  directionEvent(3,true);assert(editor.markStartOfs==50 && editor.markEndOfs==71);
+  fakeTicks=10100;repeatDirections(fakeTicks);assert(editor.markEndOfs==71);
+  fakeTicks=10281;repeatDirections(fakeTicks);assert(editor.markEndOfs==72);
+  fakeTicks=10451;repeatDirections(fakeTicks);assert(editor.markEndOfs==74);
+  fakeTicks=10901;repeatDirections(fakeTicks);assert(editor.markEndOfs==79);
+  fakeTicks=11351;repeatDirections(fakeTicks);assert(editor.markEndOfs==89);
+  fakeTicks=11801;repeatDirections(fakeTicks);assert(editor.markEndOfs==139);
+  fakeTicks=12301;repeatDirections(fakeTicks);assert(editor.markEndOfs==239);
   directionEvent(3,false);
-  fakeTicks=12100;directionEvent(3,true);
-  assert(editor.markEndOfs==270); /* release/repress resets the speed */
+  fakeTicks=12400;directionEvent(3,true);
+  assert(editor.markEndOfs==240);
   directionEvent(3,false);
   /* MENU+LEFT contracts END but cannot cross START+2. */
   editor.markStartOfs=90;editor.markEndOfs=120;
-  fakeTicks=13000;directionEvent(2,true);assert(editor.markEndOfs==110);
-  fakeTicks=15001;repeatDirections(fakeTicks);assert(editor.markEndOfs==92);
+  fakeTicks=13000;directionEvent(2,true);assert(editor.markEndOfs==119);
+  fakeTicks=15301;repeatDirections(fakeTicks);assert(editor.markEndOfs==92);
   directionEvent(2,false);
   releaseButton(PPT_BTN_MENU);
-  /* Accelerated SELECT+RIGHT approaches END-2, without moving END. */
+  /* Accelerated SELECT+RIGHT clamps at END-2 without moving END. */
   buttonEvent(PPT_BTN_SELECT,true);
   editor.markStartOfs=70;editor.markEndOfs=90;
-  fakeTicks=16000;directionEvent(3,true);assert(editor.markStartOfs==80);
-  fakeTicks=18001;repeatDirections(fakeTicks);assert(editor.markStartOfs==88);
+  fakeTicks=16000;directionEvent(3,true);assert(editor.markStartOfs==71);
+  fakeTicks=18301;repeatDirections(fakeTicks);assert(editor.markStartOfs==88);
   directionEvent(3,false);
   assert(editor.markEndOfs==90);
-  /* SELECT+LEFT clamps the START edge to zero. */
-  editor.markStartOfs=8;editor.markEndOfs=90;
+  /* SELECT+LEFT uses one-byte precision near zero. */
+  editor.markStartOfs=1;editor.markEndOfs=90;
   directionAction(2);assert(editor.markStartOfs==0 && editor.markEndOfs==90);
   releaseButton(PPT_BTN_SELECT);
   /* Repeating direction without SELECT must not alter sample selection. */
@@ -227,12 +232,12 @@ int main(void){
   state.samples[0].length=200;
   editor.markStartOfs=0;editor.markEndOfs=200;
   buttonEvent(PPT_BTN_SELECT,true);directionAction(2);
-  directionAction(3);assert(editor.markStartOfs==10 && editor.markEndOfs==200);
+  directionAction(3);assert(editor.markStartOfs==1 && editor.markEndOfs==200);
   releaseButton(PPT_BTN_SELECT);
   buttonEvent(PPT_BTN_MENU,true);
   directionAction(3);assert(editor.markEndOfs==200);
   editor.markStartOfs=193;editor.markEndOfs=195;
-  directionAction(3);assert(editor.markEndOfs==200);
+  directionAction(3);assert(editor.markEndOfs==196);
   assert(editor.markStartOfs==193);
   directionAction(2);assert(editor.markEndOfs==195);
   releaseButton(PPT_BTN_MENU);
@@ -246,6 +251,29 @@ int main(void){
   int errsBefore=samplerErrs;
   directionAction(2);assert(samplerErrs==errsBefore+1 && editor.markEndOfs==195);
   releaseButton(PPT_BTN_MENU);
+  /* RESAMPLING NOTE: native sampler selection 0..35 (C-1..B-3).
+     G/D = semitone, L/R = octave. No sample audio is modified here. */
+  ui.changingSmpResample=true; editor.resampleNote=24;
+  int previewsBefore=samplerWholeAuditions;
+  directionAction(0);assert(editor.resampleNote==25 && ui.updateResampleNote);
+  directionAction(3);assert(editor.resampleNote==35);
+  directionAction(0);assert(editor.resampleNote==35); /* hard max */
+  directionAction(2);assert(editor.resampleNote==23);
+  directionAction(1);assert(editor.resampleNote==22);
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(!ui.changingSmpResample && editor.resampleNote==22);
+  assert(previousPointerModeCalls==1 && previousStatusCalls==1);
+  assert(samplerWholeAuditions==previewsBefore);
+  ui.changingSmpResample=true;
+  directionAction(1);assert(editor.resampleNote==21);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(!ui.changingSmpResample && editor.resampleNote==22); /* cancel */
+  ui.changingSmpResample=true;editor.resampleNote=0;
+  directionAction(1);assert(editor.resampleNote==0); /* hard min */
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!ui.changingSmpResample && editor.resampleNote==0);
+  assert(previousPointerModeCalls==3 && previousStatusCalls==3);
+  assert(samplerNewSlots==1); /* RESAMPLE NOTE B never copies a RANGE */
   ui.samplerScreenShown=false;
   /* Physical calibration unchanged. */
   assert(rawMap[PPT_BTN_SELECT]==310 && rawMap[PPT_BTN_START]==311);

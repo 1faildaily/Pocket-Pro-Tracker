@@ -10,3 +10,5 @@ void displayMsg(const char*);
 
 void displayMainScreen(void);
 void renderDiskOpScreen(void);
+
+void pointerSetPreviousMode(void);

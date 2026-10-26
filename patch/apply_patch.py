@@ -343,6 +343,20 @@ else:
     assert vu_replacement in vs and vu_anchor not in vs
     print('PPT v0.3.14: VU renderer already patched')
 
+
+# PPT v0.3.20: Native resample note carousel, shows the selected candidate.
+vis=root/'src'/'pt2_visuals.c'
+vs=vis.read_text()
+if 'PPT_RESAMPLE_NOTE_CAROUSEL' not in vs:
+    before='\t\tif (ui.changingSmpResample)\n\t\t{\n\t\t\ttextOutBg(288, 236, "---", video.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);\n\t\t}\n\t\telse\n\t\t{\n\t\t\tASSERT(editor.resampleNote < 36);\n\t\t\ttextOutBg(288, 236,\n\t\t\t\tconfig.accidental ? noteNames2[2+editor.resampleNote] : noteNames1[2+editor.resampleNote],\n\t\t\t\tvideo.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);\n\t\t}'
+    assert vs.count(before)==1, 'PT2 RESAMPLE NOTE display anchor changed'
+    after='\t\t/* PPT_RESAMPLE_NOTE_CAROUSEL: show candidate pitch (C-1..B-3)\n\t\t   even while PT2 waits for a note in the sampler UI. */\n\t\tASSERT(editor.resampleNote < 36);\n\t\ttextOutBg(288, 236,\n\t\t\tconfig.accidental ? noteNames2[2+editor.resampleNote] : noteNames1[2+editor.resampleNote],\n\t\t\tvideo.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);'
+    vs=vs.replace(before,after,1)
+    vis.write_text(vs)
+    print('PPT v0.3.20 sampler resample note preview installed')
+else:
+    print('PPT v0.3.20 sampler resample note preview already installed')
+
 # PPT v0.3.16: Native PT2 LOOP ON uses an existing marked sampler RANGE.
 # A .MOD loop must start and end on even byte boundaries. For an odd mouse
 # selection the closest inner even-aligned bounds are used. LOOP OFF remains

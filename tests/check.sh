@@ -49,6 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
  assert 'PPT_SAMPLER_RANGE_LOOP' in (p/'src/pt2_sampler.c').read_text()
  assert (p/'src/pt2_sampler.c').read_text().count('PPT_SAMPLER_RANGE_LOOP')==1
  assert 'ppt_input_update();' in (p/'src/pt2_main.c').read_text()
+ assert 'PPT_RESAMPLE_NOTE_CAROUSEL' in (p/'src/pt2_visuals.c').read_text()
  assert 'if (ppt_live_edit_active() && !ppt_position_browse_active())' in (p/'src/pt2_replayer.c').read_text()
  assert (p/'src/pt2_replayer.c').read_text().count('if (ppt_live_edit_active() && !ppt_position_browse_active())')==1
  assert 'ppt_loop_redirect(modPos, song->header.songLength)' in (p/'src/pt2_replayer.c').read_text()
@@ -61,6 +62,8 @@ with tempfile.TemporaryDirectory() as tmp:
  vis=(p/'src/pt2_visuals.c').read_text()
  assert 'fillToVuMetersBgBuffer(); // PPT_NO_CHANNEL_VU:' in vis
  assert vis.count('PPT_NO_CHANNEL_VU')==1
+ assert vis.count('PPT_RESAMPLE_NOTE_CAROUSEL')==1
+ assert (p/'src/pt2_visuals.c').read_text().count('PPT_RESAMPLE_NOTE_CAROUSEL')==1
  assert 'renderVuMeters(); // let' not in vis
  assert vis.count('void renderVuMeters(void)')==1
  assert vis.count('void renderSprites(void)')==1
@@ -114,9 +117,11 @@ assert 'samplerSamCopy();' in p
 assert 'if(editStart)start=clamp(start+delta,0,end-2);' in p
 assert 'else end=clamp(end+delta,start+2,length);' in p
 assert 'pptSamplerMoveRange(!held[PPT_BTN_MENU],d==2?-1:1,samplerRangeStep(d));' in p
-assert 'return 10;' in p and 'if(elapsed>=2000)return 100;' in p
+assert 'return 1;' in p and 'if(elapsed>=2300)return 100;' in p and 'if(elapsed>=900)return 5;' in p
 assert 'if (editor.markStartOfs >= 0 &&' in a
-print('Sampler independent RANGE edges / accelerated preview / copy / loop patch verified')
+assert 'resampleCarouselMove(d)' in p and 'resampleCarouselFinish(true)' in p
+assert 'PPT_RESAMPLE_NOTE_CAROUSEL' in a
+print('Sampler RANGE acceleration and RESAMPLE NOTE carousel patch verified')
 PY_SAMPLE
 
 python3 - <<'PY_LOOP'

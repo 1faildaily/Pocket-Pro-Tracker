@@ -82,3 +82,7 @@ SELECT+B then D-pad to expand gray selection and B to copy. SELECT+B+L1 copies c
 
 ## PPT v0.3.8 — POSITION LOOP
 Kliknij X na POS, by otworzyć POSITION EDITOR. Góra/dół przegląda SONG order, nie zmienia przypisania patternów. SELECT+B rozpoczyna zaznaczenie pozycji, D-pad je rozszerza, B zatwierdza loop, SELECT+Y włącza/wyłącza loop. MENU+START zaczyna SONG od zaznaczonego początku, jeśli loop jest aktywny. W PATTERN EDIT pozostaje schowek LSDJ.
+
+
+## PPT v0.3.20
+Sampler RANGE: SHIFT+LEFT/RIGHT = beginning, MENU+LEFT/RIGHT = end. A tap changes by 1 byte; hold accelerates 1/2/5/10/50/100. Select RESAMPLE NOTE with X then choose C-1 through B-3 using D-pad UP/DOWN (semitone) or LEFT/RIGHT (octave). X/Y confirms, B cancels. Resampling is performed only by PT2 RESAMPLE.
