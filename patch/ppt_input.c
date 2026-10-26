@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.15 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.17 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -26,6 +26,7 @@
 #include "pt2_replayer.h"
 #include "pt2_audio.h"
 #include "pt2_helpers.h"
+#include "pt2_textout.h"
 #include "pt2_textedit.h"
 #include "pt2_sampler.h"
 #include "pt2_diskop.h"
@@ -98,7 +99,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.15 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.17 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -128,7 +129,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.15 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.17 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -218,7 +219,7 @@ static void rightStickOpenView(int target)
   displayMainScreen();
   if(target==PPT_VIEW_SAMPLER && !ui.samplerScreenShown)samplerScreen();
   if(inputLog){
-    fprintf(inputLog,"PPT 0.3.15 VIEW %s playing=%d\n",
+    fprintf(inputLog,"PPT 0.3.17 VIEW %s playing=%d\n",
       target==PPT_VIEW_POSITION?"POSITION":target==PPT_VIEW_PATTERN?"PATTERN":
       target==PPT_VIEW_DISK?"DISKOP":"SAMPLER",(int)editor.songPlaying);
     fflush(inputLog);
@@ -409,6 +410,40 @@ static void updateEffectStatus(void){
   lastEffectRow=(int)song->currRow;lastEffectCommand=n->command;lastEffectSub=sub;
   displayMsg(pptEffectName(n->command,n->param));
 }
+/* PT2's *native* EDITSKIP is editor.editMoveAdd (0..9), normally
+   changed from a keyboard by CTRL+0..9. On the handheld, physical
+   SELECT acts as SHIFT:
+      SELECT+LEFT/RIGHT adjusts EDITSKIP -1/+1 and reports STATUS;
+      SELECT+UP/DOWN navigates by EDITSKIP rows.
+   EDITSKIP=0 disables automatic note-entry advance in upstream PT2.
+   For explicit cursor travel a minimum manual step of 1 is used, so
+   SHIFT+UP/DOWN never gets stuck at EDITSKIP=0. */
+static void adjustEditSkip(int change){
+  if(!song)return;
+  const int next=clamp((int)editor.editMoveAdd+change,0,9);
+  editor.editMoveAdd=(uint8_t)next;
+  ui.updateTrackerFlags=true;
+  char msg[32];
+  snprintf(msg,sizeof(msg),"EDITSKIP = %d",next);
+  displayMsg(msg);
+  /* Prevent the FX tooltip poll from immediately hiding the new status
+     when the cursor is sitting on an effect command/parameter. */
+  const note_t *n=currentNote();
+  if(n){
+    lastEffectCursor=cursor.pos;
+    lastEffectPattern=(int)song->currPattern;
+    lastEffectRow=(int)song->currRow;
+    lastEffectCommand=(int)n->command;
+    lastEffectSub=n->command==0xE?(n->param>>4):-1;
+  }
+}
+static void navigateEditSkip(int direction){
+  if(!song)return;
+  const int step=editor.editMoveAdd>0 ? editor.editMoveAdd : 1;
+  song->currRow=wrap((int)song->currRow+(direction<0?-step:step),64);
+  ui.updatePatternData=true;
+  updateCursorPos();
+}
 static void edit(int d){
   if(!song || ui.diskOpScreenShown || ui.samplerScreenShown || ui.editTextFlag || ui.askBoxShown)return;
   if(editor.songPlaying && !liveEditEnabled)return;
@@ -520,7 +555,7 @@ static struct {
 static bool selecting;
 static int markRow, markCol, markPattern;
 
-/* PPT 0.3.15 POSITION LOOP. Packed into one atomic word because the audio
+/* PPT 0.3.17 POSITION LOOP. Packed into one atomic word because the audio
    callback cannot safely lock or read half-updated UI selection state.
    bits 0-7=first, 8-15=last, 16=range valid, 17=enabled. */
 enum { POS_LOOP_VALID=1<<16, POS_LOOP_ON=1<<17 };
@@ -565,7 +600,7 @@ static void beginPosMark(void){
   if(!posEditorActive())return;
   posMarking=true;posMarkStart=posMarkEnd=clamp((int)song->currPos,0,127);
   posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
 }
 static void confirmPosMark(void){
   if(!posEditorActive() || !posMarking)return;
@@ -578,14 +613,14 @@ static void confirmPosMark(void){
   const int hi=here>posMarkStart?here:posMarkStart;
   atomic_store_explicit(&positionLoop,lo|(hi<<8)|POS_LOOP_VALID|POS_LOOP_ON,memory_order_release);
   posMarking=false;posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
 }
 /* SELECT+Y is a full CLEAR, not an enable/disable toggle. The former
    toggle left a gray stored range behind and prevented intuitive remarking. */
 static void userClearPosLoop(void){
   if(!posEditorActive())return;
   clearPosLoop();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 POS_LOOP CLEARED\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 POS_LOOP CLEARED\n");fflush(inputLog);}
 }
 /* Move a selected loop endpoint without moving the engine's playback
    position. While STOPped, browse the normal PT2 list so the endpoint is
@@ -671,7 +706,7 @@ static void stashClip(int kind){
   memcpy(clip.cells,source,sizeof(clip.cells));
   endPatternWrite(locked);
   cancelSelection();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
     clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
 }
 static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
@@ -718,7 +753,7 @@ static void pasteClip(void){
   }
   endPatternWrite(locked);
   changed();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 PASTE kind=%d to patt=%d row=%d col=%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 PASTE kind=%d to patt=%d row=%d col=%d\n",
    clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
@@ -800,6 +835,41 @@ static void modalKey(SDL_Keycode key){
   e.key.keysym.sym=key;
   SDL_PushEvent(&e);
 }
+/* v0.3.16 SAMPLER pad controls. PT2 keeps ownership of audio,
+   sample allocations, waveform drawing, and copy confirmation boxes. */
+static void pptSamplerCopyToFreeSlot(void){
+  if(!song || editor.sampleZero || editor.currSample<0 || editor.currSample>=MOD_SAMPLES)return;
+  if(editor.markStartOfs<0 || editor.markEndOfs-editor.markStartOfs<2 ||
+     editor.markEndOfs>song->samples[editor.currSample].length){
+    displayErrorMsg("NO RANGE SELECTED");return;
+  }
+  /* Native samplerSamCopy SHIFT branch creates a new sample in the first
+     zero-length slot, checks overflow, and prompts through askBox. Do NOT
+     intercept its modal loop. The real keyboard modifier is restored. */
+  const bool previousShift=keyb.shiftPressed;
+  keyb.shiftPressed=true;
+  samplerSamCopy();
+  keyb.shiftPressed=previousShift;
+}
+static void pptSamplerMoveRange(int direction){
+  if(!song || editor.sampleZero || editor.currSample<0 || editor.currSample>=MOD_SAMPLES)return;
+  const int32_t length=song->samples[editor.currSample].length;
+  if(editor.markStartOfs<0 || editor.markEndOfs<=editor.markStartOfs || length<2){
+    displayErrorMsg("NO RANGE SELECTED");return;
+  }
+  /* 001 displayed sample offset = 1 raw 8-bit sample byte.
+     LOOP ON separately aligns selected endpoints to MOD word boundaries. */
+  int32_t start=editor.markStartOfs;
+  int32_t end=editor.markEndOfs;
+  if(direction<0)start=start>0?start-1:0;
+  else end=end<length?end+1:length;
+  /* Redraw the waveform WITH its new selection (redrawSample would CLEAR it). */
+  editor.markStartOfs=start;
+  editor.markEndOfs=end;
+  editor.samplePos=direction<0?start:end;
+  displaySample();
+  updateSamplePos();
+}
 static void buttonEvent(int b,bool down){
   if(b<0||b>=C_COUNT)return;
   if(held[b]==down)return;
@@ -842,6 +912,17 @@ static void buttonEvent(int b,bool down){
     else {startPending=true;startWithShift=held[PPT_BTN_SELECT];
           startWithMenu=held[PPT_BTN_MENU];}
     return;
+  }
+  /* Sampler buttons override pattern clipboard and A-note insertion.
+     SELECT+A auditions the marked range; A plays the full waveform.
+     B calls upstream copy-to-first-empty-slot (with confirmation). */
+  if(ui.samplerScreenShown && !ui.editTextFlag){
+    if(b==PPT_BTN_A){
+      if(held[PPT_BTN_SELECT])samplerPlayRange();
+      else samplerPlayWaveform();
+      return;
+    }
+    if(b==PPT_BTN_B){pptSamplerCopyToFreeSlot();return;}
   }
   /* POSITION editor has its own rectangular SONG order selection.
      SELECT+B begins, and the next B confirms even if SELECT was released. */
@@ -943,6 +1024,13 @@ static void directionAction(int d){
     return;
   }
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
+  if(ui.samplerScreenShown && !ui.editTextFlag){
+    /* SELECT+LEFT: move RANGE start -001 word; SELECT+RIGHT: extend
+       RANGE end +001 word, without affecting pattern selection. */
+    if(held[PPT_BTN_SELECT] && (d==2 || d==3))
+      pptSamplerMoveRange(d==2?-1:1);
+    return;
+  }
   if(posEditorActive()){
     /* In POSITION EDIT the native PT2 playback view follows the song.
        An active loop selection has its own endpoint; D-pad cannot accidentally
@@ -961,6 +1049,17 @@ static void directionAction(int d){
       cursor.channel=cursor.pos/6;
       ui.updatePatternData=true;updateCursorPos();
     }
+    return;
+  }
+  /* PATTERN EDIT only: SELECT+UP/DOWN jumps by native EDITSKIP;
+     SELECT+LEFT/RIGHT adjusts the same native edit step and reports
+     PT2's original status message. Separate sampler/POS/block handling
+     above retains priority. R1+D-pad remains a mouse accelerator. */
+  if(held[PPT_BTN_SELECT] && !held[PPT_BTN_R1] &&
+     !ui.askBoxShown && !ui.diskOpScreenShown &&
+     !ui.editTextFlag && !ui.editOpScreenShown && !ui.aboutScreenShown){
+    if(d==0 || d==1)navigateEditSkip(d==0?-1:1);
+    else adjustEditSkip(d==2?-1:1);
     return;
   }
   /* During askBox(), the D-pad controls the pointer, not the pattern.
@@ -1004,7 +1103,7 @@ void ppt_input_init(void){
   rightStickArmed=true;
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.15 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.17 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -1062,7 +1161,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.15 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.17 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -1073,7 +1172,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.15 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.17 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }

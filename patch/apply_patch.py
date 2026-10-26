@@ -342,3 +342,20 @@ if 'PPT_NO_CHANNEL_VU' not in vs:
 else:
     assert vu_replacement in vs and vu_anchor not in vs
     print('PPT v0.3.14: VU renderer already patched')
+
+# PPT v0.3.16: Native PT2 LOOP ON uses an existing marked sampler RANGE.
+# A .MOD loop must start and end on even byte boundaries. For an odd mouse
+# selection the closest inner even-aligned bounds are used. LOOP OFF remains
+# the upstream implementation, and unmarked samples still behave natively.
+sampler_file=root/'src'/'pt2_sampler.c'
+assert sampler_file.exists(), 'Missing PT2 sampler source'
+ss=sampler_file.read_text()
+if 'PPT_SAMPLER_RANGE_LOOP' not in ss:
+    loop_anchor='\t\tif (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}'
+    assert ss.count(loop_anchor)==1, 'PT2 sampler loop ON anchor changed'
+    modified='\t\t/* PPT_SAMPLER_RANGE_LOOP: selected waveform region wins on LOOP ON.\n\t\t   Round inward to MOD-compatible even byte offsets. */\n\t\tconst int32_t pptRangeStart = (editor.markStartOfs+1) & ~1;\n\t\tconst int32_t pptRangeEnd = editor.markEndOfs & ~1;\n\t\tif (editor.markStartOfs >= 0 &&\n\t\t    pptRangeEnd-pptRangeStart >= 2 && pptRangeEnd <= s->length)\n\t\t{\n\t\t\ts->loopStart = pptRangeStart;\n\t\t\ts->loopLength = pptRangeEnd-pptRangeStart;\n\t\t}\n\t\telse if (editor.markStartOfs >= 0)\n\t\t{\n\t\t\tdisplayErrorMsg("SET LARGER RANGE");\n\t\t\treturn;\n\t\t}\n\t\telse if (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}'
+    ss=ss.replace(loop_anchor,modified,1)
+    sampler_file.write_text(ss)
+    print('PPT v0.3.16 sampler LOOP ON follows marked range')
+else:
+    print('PPT v0.3.16 sampler LOOP ON already patched')

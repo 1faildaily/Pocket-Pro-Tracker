@@ -14,6 +14,19 @@ assert {x['name']:x['raw'] for x in a['buttons']}==dict(SELECT=310,START=311,L1=
 print('Calibration JSON validated')
 PY
 bash -n 'port/Pocket Pro Tracker PT2.sh'
+python3 - <<'PY'
+from pathlib import Path
+s=Path('patch/ppt_input.c').read_text()
+assert 'static void adjustEditSkip(int change)' in s
+assert 'static void navigateEditSkip(int direction)' in s
+assert 'editor.editMoveAdd=(uint8_t)next' in s
+assert 'ui.updateTrackerFlags=true;' in s
+assert 'EDITSKIP = %d' in s
+assert s.index('if(ui.samplerScreenShown && !ui.editTextFlag){',s.index('static void directionAction(')) < s.index('if(held[PPT_BTN_SELECT] && !held[PPT_BTN_R1]',s.index('static void directionAction('))
+assert s.index('if(selecting){',s.index('static void directionAction(')) < s.index('if(held[PPT_BTN_SELECT] && !held[PPT_BTN_R1]',s.index('static void directionAction('))
+print('Native EDITSKIP and view precedence OK')
+PY
+
 python3 -m py_compile patch/apply_patch.py
 
 python3 - <<'PY'
@@ -28,10 +41,13 @@ with tempfile.TemporaryDirectory() as tmp:
  (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_posed.c').write_text((root/'tests/fixtures/pt2_position_editor_sample.c').read_text())
  (p/'src/pt2_visuals.c').write_text((root/'tests/fixtures/pt2_visuals_vu_sample.c').read_text())
+ (p/'src/pt2_sampler.c').write_text('void samplerLoopToggle(void)\n{\n\tif (s->loopStart+s->loopLength > 2) {}\n\telse\n\t{\n\t\tif (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}\n\t}\n}\n')
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
  assert 'pptPreviewInsertedNote' in (p/'src/pt2_edit.c').read_text()
+ assert 'PPT_SAMPLER_RANGE_LOOP' in (p/'src/pt2_sampler.c').read_text()
+ assert (p/'src/pt2_sampler.c').read_text().count('PPT_SAMPLER_RANGE_LOOP')==1
  assert 'ppt_input_update();' in (p/'src/pt2_main.c').read_text()
  assert 'if (ppt_live_edit_active() && !ppt_position_browse_active())' in (p/'src/pt2_replayer.c').read_text()
  assert (p/'src/pt2_replayer.c').read_text().count('if (ppt_live_edit_active() && !ppt_position_browse_active())')==1
@@ -87,3 +103,27 @@ assert 'fillToVuMetersBgBuffer(); // PPT_NO_CHANNEL_VU' in p
 assert 'pt2_visuals.c' in p
 print('PPT 0.3.14 NO CHANNEL VU: preserves channel audio and spectrum renderer')
 PY_VU
+
+python3 - <<'PY_SAMPLE'
+from pathlib import Path
+p=Path('patch/ppt_input.c').read_text()
+a=Path('patch/apply_patch.py').read_text()
+assert 'samplerPlayWaveform();' in p
+assert 'samplerPlayRange();' in p
+assert 'samplerSamCopy();' in p
+assert 'if(direction<0)start=start>0?start-1:0;' in p
+assert 'if (editor.markStartOfs >= 0 &&' in a
+print('Sampler RANGE / preview / copy / loop patch verified')
+PY_SAMPLE
+
+python3 - <<'PY_LOOP'
+# PT2 v1.92 stores sample LOOP boundaries at even 8-bit byte offsets.
+for start,end,length in [(10,30,100),(11,35,100),(0,200,200),(1,2,200)]:
+ s=(start+1)&~1
+ e=end&~1
+ if e-s>=2:
+  assert s%2==0 and (e-s)%2==0 and 0<=s<e<=length
+ else:
+  assert (start,end)==(1,2)
+print('Sampler LOOP range alignment and short-range rejection tested')
+PY_LOOP

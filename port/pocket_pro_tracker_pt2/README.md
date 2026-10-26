@@ -1,4 +1,4 @@
-Pocket Pro Tracker v0.3.15: XCOPY palette, channel VU meters hidden, audio unchanged.
+Pocket Pro Tracker v0.3.16: XCOPY palette, channel VU meters hidden, audio unchanged.
 
 PPT v0.3.13 XCOPY custom palette: colors.ini in this folder is loaded at startup.
 

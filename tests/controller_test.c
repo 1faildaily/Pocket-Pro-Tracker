@@ -6,6 +6,7 @@
 #include "pt2_structs.h"
 module_t state,*song=&state;
 editor_t editor;
+keyb_t keyb;
 audio_t audio;
 ui_t ui;
 mouse_t mouse;
@@ -50,6 +51,15 @@ void displayMainScreen(void){viewRenders++;if(ui.diskOpScreenShown)renderDiskOpS
 void samplerScreen(void){samplerOpens++;ui.samplerScreenShown=true;}
 void exitFromSam(void){samplerExits++;ui.samplerScreenShown=false;}
 
+static int samplerWholeAuditions, samplerRangeAuditions, samplerNewSlots;
+static int samplerRangeRenders, samplerPosUpdates, samplerErrs;
+static int samplerShiftWasHeld;
+void samplerPlayWaveform(void){samplerWholeAuditions++;}
+void samplerPlayRange(void){samplerRangeAuditions++;}
+void samplerSamCopy(void){samplerNewSlots++;samplerShiftWasHeld=keyb.shiftPressed;}
+void displaySample(void){samplerRangeRenders++;}
+void updateSamplePos(void){samplerPosUpdates++;}
+void displayErrorMsg(const char *s){(void)s;samplerErrs++;}
 unsigned int SDL_GetTicks(void){return 0;}
 static SDL_Event lastEvent; static int eventsPushed;
 int SDL_PushEvent(SDL_Event *event){lastEvent=*event;eventsPushed++;return 1;}
@@ -62,6 +72,103 @@ int main(void){
   state.patterns[0]=patt;
   cursor.pos=0;
   editor.currSample=0;
+  /* v0.3.17: SHIFT (physical SELECT) + D-pad pattern EDITSKIP.
+     Native PT2 stores the speed at editor.editMoveAdd = 0..9. */
+  assert(editor.editMoveAdd==0);
+  ui.samplerScreenShown=false; ui.posEdScreenShown=false;
+  ui.diskOpScreenShown=false; ui.editOpScreenShown=false;
+  ui.aboutScreenShown=false; ui.askBoxShown=false;
+  ui.editTextFlag=false;
+  state.currRow=10; cursor.pos=0;
+  int initialPlayCount=playCalls;
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(3);assert(editor.editMoveAdd==1);
+  assert(ui.updateTrackerFlags && !strcmp(lastStatusMessage,"EDITSKIP = 1"));
+  directionAction(3);directionAction(3);directionAction(3);
+  assert(editor.editMoveAdd==4 && !strcmp(lastStatusMessage,"EDITSKIP = 4"));
+  directionAction(1);assert(state.currRow==14);
+  directionAction(0);assert(state.currRow==10);
+  directionAction(2);assert(editor.editMoveAdd==3);
+  assert(!strcmp(lastStatusMessage,"EDITSKIP = 3"));
+  state.currRow=63;directionAction(1);assert(state.currRow==2);
+  state.currRow=1;directionAction(0);assert(state.currRow==62);
+  for(int i=0;i<20;i++)directionAction(3);
+  assert(editor.editMoveAdd==9);
+  directionAction(3);assert(editor.editMoveAdd==9);
+  for(int i=0;i<20;i++)directionAction(2);
+  assert(editor.editMoveAdd==0);
+  state.currRow=5;directionAction(1);assert(state.currRow==6);
+  assert(playCalls==initialPlayCount);
+  releaseButton(PPT_BTN_SELECT);
+  assert(!ppt_live_edit_active());
+  /* Modifier must not change sampler RANGE actions, POS selection or
+     grey pattern-block mark controls. */
+  editor.editMoveAdd=4;
+  editor.currSample=0; state.samples[0].length=200;
+  ui.samplerScreenShown=true;
+  editor.markStartOfs=40;editor.markEndOfs=100;
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(2);
+  assert(editor.markStartOfs==39 && editor.editMoveAdd==4);
+  releaseButton(PPT_BTN_SELECT);
+  ui.samplerScreenShown=false;
+  /* POSITION EDIT still browses positions, never touches EDITSKIP. */
+  ui.posEdScreenShown=true; state.header.songLength=16;
+  state.currPos=7;
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(1);
+  assert(state.currPos==8 && editor.editMoveAdd==4);
+  releaseButton(PPT_BTN_SELECT);
+  ui.posEdScreenShown=false;state.currPos=0;
+  /* Active pattern-copy mark extends by one row, NOT the edit skip. */
+  state.currPattern=0;state.currRow=8;cursor.pos=0;cursor.channel=0;
+  beginSelection();assert(selecting);
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(1);
+  assert(state.currRow==9 && editor.editMoveAdd==4);
+  releaseButton(PPT_BTN_SELECT);
+  cancelSelection();state.currRow=0;
+  /* During LIVE EDIT, changing the editor ROW must leave the playhead
+     untouched while playback continues. */
+  editor.songPlaying=true;atomic_store(&liveEditEnabled,true);
+  int frozenPlaybackRow=state.row;
+  state.currRow=8;
+  buttonEvent(PPT_BTN_SELECT,true);
+  directionAction(1);
+  assert(state.currRow==12 && state.row==frozenPlaybackRow);
+  assert(editor.songPlaying && ppt_live_edit_active());
+  releaseButton(PPT_BTN_SELECT);
+  /* Releasing SELECT after using D-pad must NOT toggle LIVE EDIT. */
+  assert(ppt_live_edit_active());
+  editor.songPlaying=false;atomic_store(&liveEditEnabled,false);
+  state.currRow=0;
+  /* Reset test-only redraw counters after exercising view precedence. */
+  samplerRangeRenders=0;samplerPosUpdates=0;
+  /* v0.3.16 sampler key combinations do not paste/delete pattern cells. */
+  ui.samplerScreenShown=true;
+  editor.currSample=0;
+  state.samples[0].length=200;
+  editor.markStartOfs=40; editor.markEndOfs=100;
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
+  assert(samplerWholeAuditions==1 && samplerRangeAuditions==0);
+  buttonEvent(PPT_BTN_SELECT,true);
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
+  assert(samplerRangeAuditions==1 && samplerWholeAuditions==1);
+  /* SELECT+LEFT -> start -001 byte, SELECT+RIGHT -> end +001 byte */
+  directionAction(2);assert(editor.markStartOfs==39 && editor.markEndOfs==100);
+  directionAction(3);assert(editor.markStartOfs==39 && editor.markEndOfs==101);
+  assert(samplerRangeRenders==2 && samplerPosUpdates==2);
+  releaseButton(PPT_BTN_SELECT);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(samplerNewSlots==1 && samplerShiftWasHeld && !keyb.shiftPressed);
+  editor.markStartOfs=-1;
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);
+  assert(samplerNewSlots==1 && samplerErrs==1);
+  editor.markStartOfs=0;editor.markEndOfs=200;
+  buttonEvent(PPT_BTN_SELECT,true);directionAction(2);directionAction(3);
+  assert(editor.markStartOfs==0 && editor.markEndOfs==200);
+  releaseButton(PPT_BTN_SELECT);
+  ui.samplerScreenShown=false;
   /* Physical calibration unchanged. */
   assert(rawMap[PPT_BTN_SELECT]==310 && rawMap[PPT_BTN_START]==311);
   assert(rawMap[PPT_BTN_L1]==308 && rawMap[PPT_BTN_R1]==309);
