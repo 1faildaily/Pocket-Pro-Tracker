@@ -1,3 +1,57 @@
+# Pocket Pro Tracker v0.3.25 - FULL PATTERN + DISK-OP navigation
+
+Baza: v0.3.24. Zachowane MONO, sample 128 KB, A+B NOTE+sample,
+usuwanie zaznaczenia przez Y, schowek, LIVE EDIT i POSITION LOOP.
+
+## 1. MENU: pełnoekranowy PATTERN EDIT
+- Naciśnij i puść samo MENU, aby otworzyć nowy widok.
+- Ponowne MENU wraca do poprzedniego widoku (PATTERN / POSITION / DISK / SAMPLER).
+- 32 wiersze naraz, 4 kanały, numery wierszy 00–63, przewijanie za kursorem.
+- Wąski nagłówek POS / PAT / LEN / SMP i dolny STATUS.
+- Kolory pobierane z dostarczonego colors.ini XCOPY, bez podmieniania palety.
+- Zachowane wszystkie kontrolerowe skróty edycji, kopiowania, wklejania,
+  usuwania, transportu, LIVE EDIT i ghost playhead.
+- X w tym widoku ustawia pole i wiersz pod wskaźnikiem; Y obsługuje usuwanie zaznaczenia.
+- Kombinacje MENU+START, MENU+strzałki i L1+MENU zachowują funkcje,
+  nie przełączają dodatkowo widoku. ESC w pełnym widoku wraca z niego.
+- Prawy analog może bezpośrednio przełączyć do innego widoku.
+- Okna potwierdzeń, edycja tekstu i wybór RESAMPLE NOTE mają pierwszeństwo:
+  zakończ je przed zmianą widoku MENU.
+- Pełny widok jest nakładką tylko podczas przesyłania obrazu na ekran.
+  Oryginalny framebuffer zostaje natychmiast przywrócony; renderer bazowy
+  i jego przyrostowe odświeżanie zachowują swój stan.
+
+## 2. DISK-OP: D-pad i X
+- Góra / dół: wybierz katalog lub plik; lista przewija się na granicach.
+- Wybór ma szarą belkę i kolorowe podkreślenie.
+- X: otwórz katalog lub załaduj plik; zaznaczone '..' wraca o poziom wyżej.
+- Przy zmianie katalogu wybór wraca do początku listy.
+- Oryginalne pytanie o niezapisany moduł jest zachowane.
+- R1+D-pad nadal steruje myszą. R2/L2 zachowują natywne kliknięcia
+  w DISK-OP, więc możesz obsłużyć również ekranowe przyciski.
+- X nie wysyła jednocześnie kliknięcia myszy pod wskaźnikiem.
+- Podczas odczytywania katalogu nawigacja i aktywacja listy są wstrzymane.
+
+## Instalacja
+Zastąp pliki repozytorium, również .github -> Commit -> Push.
+Artefakt: PPT_v0.3.25_FullPattern_DiskNavigation_ARM64.
+Zainstaluj zawarty pocket_pro_tracker_pt2.zip wraz z protracker.ini i colors.ini.
+
+## Sprawdzone
+- Testy kontrolera i integracji, w tym ponowne nakładanie patcha.
+- MENU: wejście/powrót, kombinacje transportu i kierunków bez przełączania.
+- DISK-OP: D-pad, X bez zdublowanego kliknięcia, przewijanie i granice listy.
+- Lokalna kompilacja pełnego PT2 v1.92 + patch na x86-64.
+- Render rzeczywistymi fontami PT2: 32 wiersze, ROW 63, aktualna paleta XCOPY.
+- Przywracanie framebufferu po nakładce, bez naruszania obrazu bazowego.
+- Kod miksera, Pauli, obsługi 9xx i zapisu MOD nie został zmieniony w tej wersji.
+
+Do sprawdzenia: kompilacja ARM64 w GitHub Actions i działanie na Anbernicu.
+To nowy widok interfejsu; przed pracą na ważnym utworze przetestuj na kopii MOD-a.
+
+---
+Poprzednia dokumentacja:
+
 # Pocket Pro Tracker v0.3.24 - usuwanie NOTE i zaznaczenia
 
 Baza: v0.3.23. Zachowane domyślne MONO i sample do 131070 bajtów.

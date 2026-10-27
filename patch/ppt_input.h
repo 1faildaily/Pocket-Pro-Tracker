@@ -21,3 +21,11 @@ bool ppt_selection_contains(int pattern, int row, int channel, int field);
 bool ppt_position_browse_active(void);
 int ppt_loop_redirect(int proposed, int length);
 int ppt_loop_entry_style(int entry);
+
+/* Fullscreen view is a transient display overlay; never changes audio. */
+bool ppt_full_pattern_active(void);
+void ppt_views_begin(void);
+void ppt_views_end(void);
+void ppt_disk_move(int direction);
+void ppt_disk_activate(void);
+int ppt_disk_selected_row(void);

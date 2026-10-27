@@ -41,9 +41,15 @@ with tempfile.TemporaryDirectory() as tmp:
  (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_posed.c').write_text((root/'tests/fixtures/pt2_position_editor_sample.c').read_text())
  (p/'src/pt2_visuals.c').write_text((root/'tests/fixtures/pt2_visuals_vu_sample.c').read_text())
+ (p/'src/pt2_diskop.c').write_text('#include "pt2_diskop.h"\nstatic fileEntry_t *diskOpEntry;\nvoid freeDiskOpEntryMem(void)\n{\n}\n')
  (p/'src/pt2_sampler.c').write_text('void samplerLoopToggle(void)\n{\n\tif (s->loopStart+s->loopLength > 2) {}\n\telse\n\t{\n\t\tif (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}\n\t}\n}\n')
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
+ assert (p/'src/ppt_views.c').exists()
+ assert (p/'src/pt2_visuals.c').read_text().count('ppt_views_begin();')==1
+ assert (p/'src/pt2_visuals.c').read_text().count('ppt_views_end();')==1
+ assert (p/'src/pt2_diskop.c').read_text().count('PPT_DISK_SELECTION')==1
+ assert 'diskOpLoadFile((uint32_t)row, true);' in (p/'src/pt2_diskop.c').read_text()
  assert 'ppt_input_update();' in (p/'src/pt2_askbox.c').read_text()
  assert 'pptPreviewInsertedNote' in (p/'src/pt2_edit.c').read_text()
  assert 'PPT_SAMPLER_RANGE_LOOP' in (p/'src/pt2_sampler.c').read_text()

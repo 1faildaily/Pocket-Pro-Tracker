@@ -4,7 +4,7 @@ import sys, pathlib, shutil, re
 root=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
 main=root/'src'/'pt2_main.c'
 assert main.exists(), f'Not a ProTracker 2 source directory: {root}'
-for name in ['ppt_input.c','ppt_input.h','ppt_effects.h']:
+for name in ['ppt_input.c','ppt_input.h','ppt_effects.h','ppt_views.c']:
     shutil.copy2(pathlib.Path(__file__).with_name(name),root/'src'/name)
 s=main.read_text()
 if 'ppt_input_init' not in s:
@@ -373,3 +373,58 @@ if 'PPT_SAMPLER_RANGE_LOOP' not in ss:
     print('PPT v0.3.16 sampler LOOP ON follows marked range')
 else:
     print('PPT v0.3.16 sampler LOOP ON already patched')
+
+# PPT 0.3.25: render a transient overlay ONLY for texture upload, then restore
+# the native framebuffer before sprite erase / next incremental UI update.
+vis=root/'src'/'pt2_visuals.c'
+vs=vis.read_text()
+if 'ppt_views_begin();' not in vs:
+    if '#include "ppt_input.h"' not in vs:
+        vs='#include "ppt_input.h"\n'+vs
+    anchor='\tSDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));'
+    assert vs.count(anchor)==1, 'Texture upload anchor changed'
+    vs=vs.replace(anchor,'\tppt_views_begin();\n'+anchor+'\n\tppt_views_end();',1)
+    vis.write_text(vs)
+# Keep file loading / directory navigation owned by native diskOpLoadFile().
+disk=root/'src'/'pt2_diskop.c'
+assert disk.exists(), f'Missing native disk operation source: {disk}'
+if disk.exists():
+    ds=disk.read_text()
+    if 'PPT_DISK_SELECTION' not in ds:
+        ds=ds.replace('#include "pt2_diskop.h"','#include "pt2_diskop.h"\n#include "ppt_input.h"\n#include <stdatomic.h>',1)
+        anchor='static fileEntry_t *diskOpEntry;'
+        assert ds.count(anchor)==1
+        ds=ds.replace(anchor,anchor+'\nstatic _Atomic int32_t pptDiskSelection = -1;',1)
+        ds=ds.replace('void freeDiskOpEntryMem(void)\n{','void freeDiskOpEntryMem(void)\n{\n\tpptDiskSelection = -1;',1)
+        ds+=r'''
+/* PPT_DISK_SELECTION: only GUI selection and scrolling, native file actions. */
+int ppt_disk_selected_row(void)
+{
+    if (!ui.diskOpScreenShown || !diskop.cached || diskop.isFilling ||
+        diskop.forceStopReading || diskOpEntry == NULL || diskop.numEntries <= 0)
+        return -1;
+    if (pptDiskSelection < diskop.scrollOffset ||
+        pptDiskSelection >= diskop.scrollOffset + DISKOP_LINES ||
+        pptDiskSelection >= diskop.numEntries)
+        pptDiskSelection = diskop.scrollOffset;
+    return pptDiskSelection - diskop.scrollOffset;
+}
+void ppt_disk_move(int direction)
+{
+    if (ppt_disk_selected_row() < 0) return;
+    int32_t next = pptDiskSelection + direction;
+    if (next < 0) next = 0;
+    if (next >= diskop.numEntries) next = diskop.numEntries - 1;
+    pptDiskSelection = next;
+    if (next < diskop.scrollOffset) diskop.scrollOffset = next;
+    if (next >= diskop.scrollOffset + DISKOP_LINES)
+        diskop.scrollOffset = next - DISKOP_LINES + 1;
+    ui.updateDiskOpFileList = true;
+}
+void ppt_disk_activate(void)
+{
+    const int row = ppt_disk_selected_row();
+    if (row >= 0) diskOpLoadFile((uint32_t)row, true);
+}
+'''
+        disk.write_text(ds)

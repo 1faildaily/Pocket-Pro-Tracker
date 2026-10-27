@@ -63,6 +63,9 @@ void samplerSamCopy(void){samplerNewSlots++;samplerShiftWasHeld=keyb.shiftPresse
 void displaySample(void){samplerRangeRenders++;}
 void updateSamplePos(void){samplerPosUpdates++;}
 void displayErrorMsg(const char *s){(void)s;samplerErrs++;}
+static int diskMoves,diskActivations;
+void ppt_disk_move(int d){diskMoves+=d;}
+void ppt_disk_activate(void){diskActivations++;}
 static uint32_t fakeTicks;
 unsigned int SDL_GetTicks(void){return fakeTicks;}
 static SDL_Event lastEvent; static int eventsPushed;
@@ -76,6 +79,29 @@ int main(void){
   state.patterns[0]=patt;
   cursor.pos=0;
   editor.currSample=0;
+  /* MENU tap toggles fullscreen; transport / direction chords never toggle. */
+  ui.diskOpScreenShown=true;
+  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  assert(ppt_full_pattern_active() && !ui.diskOpScreenShown);
+  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  assert(!ppt_full_pattern_active() && ui.diskOpScreenShown);
+  int eventCount=eventsPushed;
+  directionAction(1);assert(diskMoves==1);
+  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  assert(diskActivations==1 && eventsPushed==eventCount);
+  ui.diskOpScreenShown=false;
+  buttonEvent(PPT_BTN_MENU,true);directionAction(3);releaseButton(PPT_BTN_MENU);
+  assert(!ppt_full_pattern_active());
+  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
+  releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_MENU);
+  assert(!ppt_full_pattern_active());editor.songPlaying=false;
+  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  assert(ppt_full_pattern_active());
+  mouse.x=64;mouse.y=35;fullPatternClick();assert(song->currRow==3 && cursor.pos==2);
+  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  assert(!ppt_full_pattern_active());song->currRow=0;cursor.pos=0;cursor.channel=0;
+  viewRenders=samplerOpens=samplerExits=diskRenders=0;
+  playCalls=stopCalls=pointerModeCalls=statusCalls=0;
   /* v0.3.24: note erase includes sample, FX preserved; rectangle is exact. */
   patt[0]=(note_t){.period=428,.sample=17,.command=0xA,.param=0xBC};
   erase();assert(patt[0].period==0 && patt[0].sample==0);
@@ -680,6 +706,7 @@ int main(void){
   assert(clip.kind==PPT_CLIP_NONE);
   /* Outside SONGNAME, X/Y remain mouse buttons. Even if edit activates
      between mouse-down and mouse-up, the original release must be sent. */
+  fullPattern=false;ui.diskOpScreenShown=false;
   state.modified=false;ui.editTextFlag=false;video.window=(SDL_Window*)1;
   buttonEvent(PPT_BTN_X,true);
   assert(mouseDownForwarded[PPT_BTN_X] && lastEvent.type==SDL_MOUSEBUTTONDOWN);

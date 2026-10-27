@@ -1,5 +1,5 @@
 /*
- * Pocket Pro Tracker controller patch v0.3.24 / PT2 clone 1.92
+ * Pocket Pro Tracker controller patch v0.3.25 / PT2 clone 1.92
  * Add-on module, does not replace the original renderer, audio engine or file format.
  * BSD-3-Clause, 2026. Upstream 8bitbubsy BSD-3-Clause credits preserved.
  * Raw key mapping confirmed on one RG35XX Pro with muOS (controls.json).
@@ -100,7 +100,7 @@ int ppt_ghost_row(int displayPattern){
 }
 static FILE *inputLog;
 static void logLiveEdit(const char *event){
-  if (inputLog){fprintf(inputLog,"PPT 0.3.24 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
+  if (inputLog){fprintf(inputLog,"PPT 0.3.25 LIVE_EDIT %s playing=%d currMode=%d\n",event,(int)editor.songPlaying,(int)editor.currMode);fflush(inputLog);}
 }
 /* The console can report analog sticks as ABS_X/Y or ABS_RX/RY,
    with widely differing physical ranges. Never assume +/-32767. */
@@ -130,7 +130,7 @@ static void diagnostic(const char *kind,int code,int value){
   if(kind[0]=='D')counter=&logDirections;
   if(kind[0]=='A')counter=&logAxes;
   if((*counter)++>=24)return;
-  fprintf(inputLog,"PPT 0.3.24 %s code=%d value=%d\n",kind,code,value);
+  fprintf(inputLog,"PPT 0.3.25 %s code=%d value=%d\n",kind,code,value);
   fflush(inputLog);
 }
 static int axisIndex(unsigned code){
@@ -207,9 +207,17 @@ static const char nameChars[]=" abcdefghijklmnopqrstuvwxyz0123456789-_";
 /* Right analog: physical ABS_RY(4) horizontal, ABS_RZ(5) vertical.
    Change view once at >91% travel. Release near center to re-arm. */
 enum {PPT_VIEW_POSITION, PPT_VIEW_PATTERN, PPT_VIEW_DISK, PPT_VIEW_SAMPLER};
+static bool fullPattern, menuChordUsed;
+static int fullPatternReturnView=PPT_VIEW_PATTERN;
+bool ppt_full_pattern_active(void){
+  return fullPattern && song && !ui.askBoxShown && !ui.editTextFlag &&
+    !ui.diskOpScreenShown && !ui.samplerScreenShown && !ui.posEdScreenShown &&
+    !ui.editOpScreenShown && !ui.aboutScreenShown;
+}
 static void rightStickOpenView(int target)
 {
   if(!song || ui.editTextFlag || ui.askBoxShown)return;
+  fullPattern=false;
   if(ui.samplerScreenShown && target!=PPT_VIEW_SAMPLER)exitFromSam();
   ui.posEdScreenShown=false;
   ui.diskOpScreenShown=false;
@@ -220,11 +228,31 @@ static void rightStickOpenView(int target)
   displayMainScreen();
   if(target==PPT_VIEW_SAMPLER && !ui.samplerScreenShown)samplerScreen();
   if(inputLog){
-    fprintf(inputLog,"PPT 0.3.24 VIEW %s playing=%d\n",
+    fprintf(inputLog,"PPT 0.3.25 VIEW %s playing=%d\n",
       target==PPT_VIEW_POSITION?"POSITION":target==PPT_VIEW_PATTERN?"PATTERN":
       target==PPT_VIEW_DISK?"DISKOP":"SAMPLER",(int)editor.songPlaying);
     fflush(inputLog);
   }
+}
+static void toggleFullPattern(void){
+  if(!song || ui.askBoxShown || ui.editTextFlag || ui.changingSmpResample)return;
+  if(fullPattern){rightStickOpenView(fullPatternReturnView);return;}
+  fullPatternReturnView=ui.samplerScreenShown?PPT_VIEW_SAMPLER:
+    ui.diskOpScreenShown?PPT_VIEW_DISK:ui.posEdScreenShown?PPT_VIEW_POSITION:PPT_VIEW_PATTERN;
+  rightStickOpenView(PPT_VIEW_PATTERN);
+  fullPattern=true;
+}
+static void fullPatternClick(void){
+  /* Same 320x255 coordinates used by the independent fullscreen renderer. */
+  if(mouse.x<32 || mouse.x>=320 || mouse.y<14 || mouse.y>=238)return;
+  const int first=clamp((int)song->currRow-15,0,32);
+  const int row=first+(mouse.y-14)/7;
+  const int channel=clamp((mouse.x-32)/72,0,3);
+  const int digit=clamp(((mouse.x-32)%72)/8,0,7);
+  song->currRow=row;
+  cursor.channel=channel;
+  cursor.pos=channel*6+(digit<3?0:digit-2);
+  updateCursorPos();ui.updatePatternData=true;
 }
 static void updateRightStickViews(void)
 {
@@ -556,7 +584,7 @@ static struct {
 static bool selecting;
 static int markRow, markCol, markPattern;
 
-/* PPT 0.3.24 POSITION LOOP. Packed into one atomic word because the audio
+/* PPT 0.3.25 POSITION LOOP. Packed into one atomic word because the audio
    callback cannot safely lock or read half-updated UI selection state.
    bits 0-7=first, 8-15=last, 16=range valid, 17=enabled. */
 enum { POS_LOOP_VALID=1<<16, POS_LOOP_ON=1<<17 };
@@ -601,7 +629,7 @@ static void beginPosMark(void){
   if(!posEditorActive())return;
   posMarking=true;posMarkStart=posMarkEnd=clamp((int)song->currPos,0,127);
   posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 POS_LOOP MARK %d\n",posMarkStart);fflush(inputLog);}
 }
 static void confirmPosMark(void){
   if(!posEditorActive() || !posMarking)return;
@@ -614,14 +642,14 @@ static void confirmPosMark(void){
   const int hi=here>posMarkStart?here:posMarkStart;
   atomic_store_explicit(&positionLoop,lo|(hi<<8)|POS_LOOP_VALID|POS_LOOP_ON,memory_order_release);
   posMarking=false;posLoopRefresh();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 POS_LOOP RANGE %d..%d ON\n",lo,hi);fflush(inputLog);}
 }
 /* SELECT+Y is a full CLEAR, not an enable/disable toggle. The former
    toggle left a gray stored range behind and prevented intuitive remarking. */
 static void userClearPosLoop(void){
   if(!posEditorActive())return;
   clearPosLoop();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 POS_LOOP CLEARED\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 POS_LOOP CLEARED\n");fflush(inputLog);}
 }
 /* Move a selected loop endpoint without moving the engine's playback
    position. While STOPped, browse the normal PT2 list so the endpoint is
@@ -707,7 +735,7 @@ static void stashClip(int kind){
   memcpy(clip.cells,source,sizeof(clip.cells));
   endPatternWrite(locked);
   cancelSelection();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 CLIP kind=%d rows=%d..%d columns=%d..%d\n",
     clip.kind,clip.rowLo,clip.rowHi,clip.colLo,clip.colHi);fflush(inputLog);}
 }
 static void copyFieldValue(note_t *dst,const note_t *src,int srcField,int dstField){
@@ -775,7 +803,7 @@ static void pasteClip(void){
   }
   endPatternWrite(locked);
   changed();
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 PASTE kind=%d to patt=%d row=%d col=%d\n",
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 PASTE kind=%d to patt=%d row=%d col=%d\n",
    clip.kind,(int)song->currPattern,startRow,startCol);fflush(inputLog);}
 }
 /* Transport: START plays pattern from 00; SELECT+START plays the SAME
@@ -838,6 +866,7 @@ static void startPlayback(int mode){
    Never force editor.programRunning=false and never bypass the confirmation. */
 static bool exitChordSent, startPending, startWithShift, startWithMenu;
 static void requestEscape(void){
+  if(fullPattern){rightStickOpenView(fullPatternReturnView);exitChordSent=true;return;}
   if(exitChordSent)return;
   exitChordSent=true;
   SDL_Event e;memset(&e,0,sizeof(e));
@@ -873,7 +902,7 @@ static void pptSamplerCopyToFreeSlot(void){
   samplerSamCopy();
   keyb.shiftPressed=previousShift;
 }
-/* PPT v0.3.24: one sample byte for a tap, progressively faster holds.
+/* PPT v0.3.25: one sample byte for a tap, progressively faster holds.
    Repeat delay is unchanged; the entire acceleration curve resets on key-up.
    Each step uses the same direction/boundary, no abrupt jumps on a tap. */
 static int samplerRangeStep(int d){
@@ -942,6 +971,8 @@ static void buttonEvent(int b,bool down){
   if(held[b]==down)return;
   held[b]=down;
   if(!down)return;
+  if(b==PPT_BTN_MENU)menuChordUsed=false;
+  else if(held[PPT_BTN_MENU])menuChordUsed=true;
   /* MOD/SAMPLE NAME editing has priority over the normal X/Y mouse buttons.
      A mouse-down which originally entered the field is tracked and will
      still get a matching mouse-up when the key is released. */
@@ -965,6 +996,11 @@ static void buttonEvent(int b,bool down){
     /* Keep left/right clicks (including legacy L2/R2) in native modals. */
     if(b!=PPT_BTN_R2 && b!=PPT_BTN_L2 && b!=PPT_BTN_X && b!=PPT_BTN_Y)return;
   }
+  if(ui.diskOpScreenShown && !ui.editTextFlag && b==PPT_BTN_X){
+    ppt_disk_activate();return;
+  }
+  if(ppt_full_pattern_active() && b==PPT_BTN_X){fullPatternClick();return;}
+  if(ppt_full_pattern_active() && b==PPT_BTN_Y && !selecting)return;
   /* Physical M/MENU (raw 312 confirmed on RG35XX Pro) + L1:
      native ESC / REALLY QUIT confirmation. Keep L1+START as fallback on
      firmware that swallows MENU at system level. */
@@ -975,6 +1011,8 @@ static void buttonEvent(int b,bool down){
     return;
   }
   if(b==PPT_BTN_MENU){
+    for(int i=0;i<C_COUNT;i++)if(i!=PPT_BTN_MENU && held[i])menuChordUsed=true;
+    for(int i=0;i<4;i++)if(dir[i])menuChordUsed=true;
     /* Also allow START -> MENU rather than requiring a specific key order. */
     if(held[PPT_BTN_START] && startPending)startWithMenu=true;
     return;
@@ -1074,7 +1112,9 @@ static void releaseButton(int b){
       !shoulderUsed[b==PPT_BTN_R1] && !held[PPT_BTN_START] &&
       !held[PPT_BTN_MENU] && !held[PPT_BTN_SELECT] && !selecting &&
       !ui.posEdScreenShown && !ui.askBoxShown;
+  const bool doMenu=b==PPT_BTN_MENU && !menuChordUsed;
   held[b]=false;
+  if(doMenu)toggleFullPattern();
   if(b==PPT_BTN_SELECT){selectChordUsed=false;if(doLive)toggleLiveEdit();}
   if(b==PPT_BTN_START){startPending=false;startWithShift=false;
     startWithMenu=false;exitChordSent=false;}
@@ -1099,7 +1139,12 @@ static void directionAction(int d){
     else editTextNextChar();         /* RIGHT -> next position */
     return;
   }
+  if(held[PPT_BTN_MENU])menuChordUsed=true;
   if(held[PPT_BTN_SELECT])selectChordUsed=true;
+  if(ui.diskOpScreenShown && !ui.editTextFlag && !ui.askBoxShown && !held[PPT_BTN_R1]){
+    if(d==0 || d==1)ppt_disk_move(d==0?-1:1);
+    return;
+  }
   if(ui.samplerScreenShown && !ui.editTextFlag){
     /* Both edges are adjustable in either direction, always by the same
        accelerated step (1/2/5/10/50/100 sample bytes):
@@ -1184,6 +1229,7 @@ static void processHatAxis(unsigned code,int value){
   }
 }
 void ppt_input_init(void){
+  fullPattern=false;menuChordUsed=false;
   posLoopOwner=song;
   clearPosLoop();
   atomic_store(&posBrowseActive,false);
@@ -1193,7 +1239,7 @@ void ppt_input_init(void){
   rightStickArmed=true;
   const char *logPath=getenv("PPT_DIAG_LOG");
   if(logPath && logPath[0])inputLog=fopen(logPath,"a");
-  if(inputLog){fprintf(inputLog,"PPT 0.3.24 input init\n");fflush(inputLog);}
+  if(inputLog){fprintf(inputLog,"PPT 0.3.25 input init\n");fflush(inputLog);}
   for(int i=0;i<DEVICES;i++){
     fds[i]=-1;
     char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",i);
@@ -1252,7 +1298,7 @@ void ppt_input_update(void){
         else if(ev.code==KEY_RIGHT || ev.code==BTN_DPAD_RIGHT)d=3;
         if(d>=0){diagnostic("DPAD-KEY",(int)ev.code,ev.value);directionEvent(d,down);}
         else if(inputLog && logUnmapped++<60){
-          fprintf(inputLog,"PPT 0.3.24 OTHER-KEY event%d code=%u value=%d L1=%d\n",
+          fprintf(inputLog,"PPT 0.3.25 OTHER-KEY event%d code=%u value=%d L1=%d\n",
                   i,(unsigned)ev.code,(int)ev.value,(int)held[PPT_BTN_L1]);
           fflush(inputLog);
         }
@@ -1263,7 +1309,7 @@ void ppt_input_update(void){
           if(a>=0){axis[a].value=ev.value;axis[a].seen=true;
             /* Limit axis samples per device so logs remain readable. */
             if(inputLog && analogByDevice[i][a]++ < 16){
-              fprintf(inputLog,"PPT 0.3.24 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
+              fprintf(inputLog,"PPT 0.3.25 ANALOG event%d code=%d value=%d\n",i,(int)ev.code,(int)ev.value);
               fflush(inputLog);
             }}
         }
