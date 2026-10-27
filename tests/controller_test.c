@@ -91,6 +91,8 @@ int main(void){
   assert(buttonFromRaw(BTN_THUMBR)==PPT_BTN_R3);
   assert(buttonFromRaw(BTN_MODE)==PPT_BTN_R3);
   assert(buttonFromRaw(312)==PPT_BTN_MENU);
+  assert(buttonFromRaw(313)==PPT_BTN_L3);
+  assert(buttonFromRaw(BTN_THUMBL)==PPT_BTN_L3);
   assert(buttonFromRaw(KEY_MENU)==PPT_BTN_MENU);
   /* R3 toggles; MENU never switches. A activates disk entry; X is a mouse click. */
   ui.diskOpScreenShown=true;

@@ -1,4 +1,17 @@
-# Pocket Pro Tracker v0.3.29 - EDITSKIP 16 / L3 RECORD / pełna lista MOD
+# Pocket Pro Tracker v0.3.30 — SONGNAME / SAVE / L3
+
+- X na SONGNAME w pełnym widoku MOD otwiera edycję nazwy w dolnej belce.
+- D-pad zmienia znak / pozycję, X przechodzi do następnego znaku, B cofa, Y kończy edycję.
+- Pełna lista pozostaje podczas edycji i potwierdzenia zapisu; natywne okno potwierdzenia jest wyświetlane nad listą.
+- L3: dodano alternatywny kod evdev 313, zachowano standardowy 317. Fizyczny klik wymaga sprawdzenia na urządzeniu; 313 jest wariantem do weryfikacji, nie pomiarem z tej konsoli.
+- LOAD SAMPLE, audio i format zapisu MOD bez zmian względem 0.3.29.
+
+Wgraj wszystkie pliki, również .github, Commit / Push i pobierz artefakt ARM64.
+
+---
+Poprzednie funkcje:
+
+# Pocket Pro Tracker v0.3.30 - EDITSKIP 16 / L3 RECORD / pełna lista MOD
 
 Baza: v0.3.28. Anbernic RG35XX Pro / muOS / PortMaster.
 
@@ -26,7 +39,7 @@ Baza: v0.3.28. Anbernic RG35XX Pro / muOS / PortMaster.
 - LIVE EDIT nie zamraża kursora podczas RECORD. Pełny pattern pokazuje REC.
 - L3 z DISK-OP / POSITION / SAMPLER przechodzi do patternu i uruchamia RECORD.
 - Okna potwierdzeń i edycja tekstu zachowują pierwszeństwo.
-- Mapowanie L3: standardowy Linux BTN_THUMBL (317). Wymaga potwierdzenia na konsoli.
+- Mapowanie L3: Linux BTN_THUMBL (317) oraz alternatywny kod 313 do weryfikacji na konsoli.
 
 ## 3. LOAD MODULE / SAVE MODULE - lista na pełną wysokość
 - W trybie MOD lista ma 32 pozycje na ekranie, od nagłówka do dolnego paska.
@@ -35,8 +48,7 @@ Baza: v0.3.28. Anbernic RG35XX Pro / muOS / PortMaster.
 - Kliknięcia w rozszerzonej części listy i przyciski przewijania mają poprawione obszary trafienia.
 - Przewijanie klawiaturą, myszą i kontrolerem korzysta z nowego rozmiaru strony.
 - Na dole widoczne SONGNAME i STATUS, po prawej przewijanie oraz EXIT.
-- X na SONGNAME otwiera oryginalną edycję nazwy; na czas edycji / potwierdzeń
-  wraca natywny układ, aby nie zasłaniać pól i okien PT2.
+- X na SONGNAME edytuje nazwę w dolnej belce. Pełna lista pozostaje także podczas potwierdzeń.
 - Struktura pliku MOD i algorytm SAVE MODULE nie są zmieniane.
 
 ## LOAD SAMPLE pozostaje jak w v0.3.28
@@ -48,7 +60,7 @@ Baza: v0.3.28. Anbernic RG35XX Pro / muOS / PortMaster.
 
 ## Instalacja
 Podmień pliki repozytorium, także .github -> Commit -> Push.
-Artefakt: PPT_v0.3.29_EditSkip_Record_FullModList_ARM64.
+Artefakt: PPT_v0.3.30_EditSkip_Record_FullModList_ARM64.
 W nim pocket_pro_tracker_pt2.zip do instalacji przez PortMaster.
 
 ## Weryfikacja

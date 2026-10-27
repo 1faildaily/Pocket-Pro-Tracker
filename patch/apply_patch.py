@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.29: use the native quantized RECORD path for handheld A.
+# PPT 0.3.30: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -576,6 +576,7 @@ if 'PPT_FULL_MOD_LIST' not in ds:
 int ppt_disk_visible_lines(void){return diskop.mode==DISKOP_MODE_MOD?32:10;}
 void ppt_disk_draw_full(void)
 {
+    fillRect(0,33,320,222,video.palette[PAL_GENBKG]);
     drawFramework1(0,33,307,197);
     if(diskop.cached && !diskop.isFilling && !diskop.forceStopReading && diskOpEntry != NULL)
     {
@@ -634,3 +635,31 @@ if m.exists():
 '''
         ms=ms.replace(anchor,anchor+custom,1)
         m.write_text(ms)
+
+# PPT_MOD_NAME_EDIT: keep native editing, with footer hit/cursor coordinates.
+m=root/'src'/'pt2_mouse.c'
+ms=m.read_text() if m.exists() else 'PPT_MOD_NAME_EDIT'
+if 'PPT_MOD_NAME_EDIT' not in ms:
+    a='textEdit.cursorStartY = 107;'
+    assert ms.count(a)==1
+    ms=ms.replace(a,'textEdit.cursorStartY = (ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD)?242:107; /* PPT_MOD_NAME_EDIT */',1)
+    m.write_text(ms)
+# Keep modal pixels (including all native labels) over the extended MOD list.
+a=root/'src'/'pt2_askbox.c'
+s=a.read_text()
+if 'PPT_MOD_DIALOG_OVERLAY' not in s:
+    s=s.replace('static dialog_t *pptImportDialog;','static dialog_t *pptImportDialog;\nstatic dialog_t *pptActiveDialog;')
+    s=s.replace('static void drawDialog(dialog_t *d)\n{','static void drawDialog(dialog_t *d)\n{\n    pptActiveDialog=d;')
+    s=s.replace('void removeAskBox(void)\n{','void removeAskBox(void)\n{\n    pptActiveDialog=NULL;')
+    s+=r'''
+/* PPT_MOD_DIALOG_OVERLAY: reuse native rendered dialog and its text. */
+void ppt_mod_restore_dialog(const uint32_t *frame)
+{
+    if(!ui.askBoxShown || !pptActiveDialog)return;
+    dialog_t *d=pptActiveDialog;
+    for(int y=d->y;y<d->y+d->h && y<SCREEN_H;y++)
+        for(int x=d->x;x<d->x+d->w && x<SCREEN_W;x++)
+            if(x>=0 && y>=0)video.frameBuffer[y*SCREEN_W+x]=frame[y*SCREEN_W+x];
+}
+'''
+    a.write_text(s)

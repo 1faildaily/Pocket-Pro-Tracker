@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdbool.h>
 #pragma once
 // Pocket Pro Tracker input adaptor for 8bitbubsy/pt2-clone v1.92
@@ -31,3 +32,5 @@ void ppt_disk_activate(void);
 int ppt_disk_selected_row(void);
 
 void ppt_disk_draw_full(void);
+
+void ppt_mod_restore_dialog(const uint32_t *frame);

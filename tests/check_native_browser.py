@@ -57,7 +57,14 @@ void pptQaRecord(void){
 ''')
  p=src/'ppt_input.c';p.write_text('#include "pt2_config.h"\n#include "pt2_paula.h"\n'+p.read_text())
  p=src/'pt2_mouse.c';p.write_text(p.read_text()+'''
+#include <assert.h>
 int pptQaHit(int x,int y){mouse.x=x;mouse.y=y;return checkGUIButtons();}
+void pptQaNameClick(void){
+ mouse.x=104;mouse.y=235;editor.errorMsgActive=false;editor.errorMsgBlock=false;
+ mouseButtonDownHandler(SDL_BUTTON_LEFT);
+ assert(ui.editTextFlag && textEdit.object==PTB_SONGNAME && textEdit.cursorStartY==242);
+ mouseButtonUpHandler(SDL_BUTTON_LEFT);
+}
 ''')
  p=src/'pt2_diskop.c';s=p.read_text()+'''
 void pptQaDisk(void){
@@ -78,6 +85,17 @@ void pptQaMany(void){
  }
 }
 ''')
+ p=src/'pt2_askbox.c';p.write_text(p.read_text()+'''
+void pptQaModDialog(void){
+ dialog_t d;memset(&d,0,sizeof(d));d.x=160;d.y=51;d.w=104;d.h=39;
+ drawDialog(&d);textOut2(166,59,"OVERWRITE FILE ?");
+ uint32_t expected[104*39];
+ for(int y=0;y<39;y++)memcpy(&expected[y*104],&video.frameBuffer[(y+51)*320+160],104*4);
+ ui.askBoxShown=true;ppt_views_begin();
+ for(int y=0;y<39;y++)assert(!memcmp(&expected[y*104],&video.frameBuffer[(y+51)*320+160],104*4));
+ pptQaSnapshot("mod_save_dialog.ppm");ppt_views_end();pptActiveDialog=NULL;ui.askBoxShown=false;
+}
+''')
  p=src/'pt2_main.c';s=p.read_text().replace('int main(int argc, char *argv[])','int pptUnusedMain(int argc, char *argv[])',1)
  s+='''
 #include <assert.h>
@@ -92,6 +110,8 @@ void pptQaDisk(void);
 void pptQaRecord(void);
 void pptQaMany(void);
 int pptQaHit(int,int);
+void pptQaNameClick(void);
+void pptQaModDialog(void);
 void pptQaSnapshot(const char *name){
  FILE *f=fopen(name,"wb");assert(f);fprintf(f,"P6\\n320 255\\n255\\n");
  for(int i=0;i<320*255;i++){uint32_t c=video.frameBuffer[i];fputc(c>>16,f);fputc(c>>8,f);fputc(c,f);}fclose(f);
@@ -167,6 +187,10 @@ int main(void){
  assert(pptQaHit(100,235)==PTB_SONGNAME);
  renderDiskOpScreen();updateDiskOp();
  ppt_views_begin();pptQaSnapshot("full_mod_list.ppm");ppt_views_end();
+ pptQaNameClick();
+ ppt_views_begin();assert(ui.editTextFlag);pptQaSnapshot("songname.ppm");ppt_views_end();
+ leaveTextEditMode(EDIT_TEXT_UPDATE);
+ pptQaModDialog();
  diskop.mode=DISKOP_MODE_SMP;assert(ppt_disk_visible_lines()==10);
  ppt_browser_close();SDL_Quit();
  puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
@@ -214,4 +238,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm']:shutil.copy2(t/name,dest/name)
