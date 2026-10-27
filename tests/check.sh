@@ -103,7 +103,7 @@ s=Path('patch/ppt_input.c').read_text()
 assert 'static int posMarkStart, posMarkEnd;' in s
 assert 'const int a=posMarkStart, b=posMarkEnd;' in s
 assert 'const int here=posMarkEnd;' in s
-assert 'if(b==PPT_BTN_Y && held[PPT_BTN_SELECT]){userClearPosLoop();return;}' in s
+assert 'if(b==PPT_BTN_Y){userClearPosLoop();return;}' in s
 assert 'posMarking)movePosMark' in s
 assert 'togglePosLoop(' not in s
 print('POSITION follow independent mark and SELECT+Y full clear: structure OK')

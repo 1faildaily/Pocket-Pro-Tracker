@@ -7,7 +7,7 @@ typedef struct {uint16_t patternTable[128];uint16_t songLength;char name[21];} h
 typedef struct {char text[23];int32_t length;} moduleSample_t;
 typedef struct {unsigned int currPattern, currPos; int currRow; int row; bool modified; header_t header; moduleSample_t samples[31]; note_t *patterns[MAX_PATTERNS];} module_t;
 typedef struct {int32_t markStartOfs,markEndOfs,samplePos;bool sampleZero;int8_t currSample;bool programRunning, songPlaying, mixFlag; int playMode,currMode,recordMode;uint8_t editMoveAdd,resampleNote,currPlayNote;uint16_t *currPatternDisp,*currPosEdPattDisp;} editor_t;
-typedef struct {int editOpScreen;bool updatePatternData, updateTrackerFlags, updateCurrSampleNum,updateSongPattern,updateSongName,updateCurrSampleName,updateCurrPattText,updateResampleNote,changingSmpResample,updateSongPos,updatePosEd,posEdScreenShown,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown,editOpScreenShown,aboutScreenShown;} ui_t;
+typedef struct {int editOpScreen;bool updateSongLength,updateSongSize,updatePatternData, updateTrackerFlags, updateCurrSampleNum,updateSongPattern,updateSongName,updateCurrSampleName,updateCurrPattText,updateResampleNote,changingSmpResample,updateSongPos,updatePosEd,posEdScreenShown,editTextFlag,askBoxShown,diskOpScreenShown,samplerScreenShown,editOpScreenShown,aboutScreenShown;} ui_t;
 typedef struct {int pos,channel;} cursor_t;
 typedef struct {SDL_Window*window;}video_t;
 typedef struct {int x,y,rawX,rawY,absX,absY;} mouse_t;

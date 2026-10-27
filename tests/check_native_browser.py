@@ -8,7 +8,7 @@ root=Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory() as td:
  t=Path(td);src=t/'src';shutil.copytree(root/'src',src)
  # Only the modal wait loop is bypassed: the real native dialog is drawn first.
- p=src/'pt2_askbox.c';s=p.read_text();s='#include <assert.h>\nextern unsigned int pptQaChoice;\nextern int pptQaSwitchSlot;\nvoid updatePatternData(void);\nvoid pptQaSnapshot(const char *);\nvoid pptQaSlot(void);\n'+s
+ p=src/'pt2_askbox.c';s=p.read_text();s='#include <assert.h>\nextern unsigned int pptQaChoice;\nextern int pptQaSwitchSlot;\nextern int pptQaParts;\nvoid updatePatternData(void);\nvoid pptQaSnapshot(const char *);\nvoid pptQaSlot(void);\n'+s
  anchor='\tpointerSetMode(POINTER_MODE_MSG1, NO_CARRY);'
  assert s.count(anchor)==1
  s=s.replace(anchor,'''    if(dialogType==ASKBOX_PPT_WAV_IMPORT){
@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as td:
         ppt_browser_adjust_pitch(100);assert(ppt_browser_import_pitch()==35);
         ppt_browser_adjust_pitch(-7);assert(ppt_browser_import_pitch()==28);
         if(pptQaChoice<=35)ppt_browser_adjust_pitch((int)pptQaChoice-28);
+        if(pptQaParts){while(ppt_browser_import_parts()<pptQaParts)ppt_browser_adjust_parts(1);while(ppt_browser_import_parts()>pptQaParts)ppt_browser_adjust_parts(-1);}
         if(pptQaSwitchSlot)pptQaSlot();
         ppt_browser_draw_import_dialog();
         uint32_t lower[320*119];memcpy(lower,&video.frameBuffer[136*320],sizeof(lower));
@@ -80,16 +81,17 @@ void pptQaSplitVerify(int parts){
  /* Additional slots are now occupied, so use the expected test allocation. */
  slots[0]=0;for(int i=1;i<parts;i++)slots[i]=i+1;
  int8_t *expected=calloc(chunk*parts,1);assert(expected);
- ppt_resample_pcm(pcm,frames,sourceHz,PAULA_PAL_CLK/periodTable[28],expected,length);
+ int kept=length<chunk*parts?length:chunk*parts;
+ ppt_resample_pcm(pcm,frames,sourceHz,PAULA_PAL_CLK/periodTable[28],expected,kept);
  for(int i=0;i<parts;i++){
   moduleSample_t *s=&song->samples[slots[i]];assert(s->length==chunk);
   assert(!memcmp(&song->sampleData[s->offset+2],expected+i*chunk+2,chunk-2));
   assert(s->fineTune==0 && s->volume==64);
  }
  free(expected);
- int n=0;assert(splitPlan(131072,&n)==2 && n==65536);
- assert(splitPlan(262142,&n)==4 && n==65536);
- assert(splitPlan(4*131070+2,&n)==0);
+ int n=0,old=importParts;importParts=2;assert(splitPlan(131072,&n)==2 && n==65536);
+ importParts=4;assert(splitPlan(262142,&n)==4 && n==65536);
+ assert(splitPlan(4*131070+2,&n)==4 && n==131070);importParts=old;
 }
 ''')
  p=src/'ppt_input.c';p.write_text(p.read_text()+'''
@@ -133,6 +135,7 @@ void pptQaModDialog(void){
 #include "pt2_tables.h"
 unsigned int pptQaChoice;
 int pptQaSwitchSlot;
+int pptQaParts;
 void pptQaSlot(void);
 void pptQaDisk(void);
 void pptQaRecord(void);
@@ -179,7 +182,9 @@ int main(void){
  assert(s->length==31388 && editor.currPlayNote==35);
  int8_t *saved=malloc(s->length);int savedLength=s->length;assert(saved);
  memcpy(saved,song->sampleData,savedLength);
+ for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=2;
  pptQaChoice=24;assert(ppt_browser_import("huge.wav","huge.wav"));
+ for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=0;
  assert(s->length==savedLength && !memcmp(saved,song->sampleData,savedLength));free(saved);
  assert(!ppt_browser_import("old.iff","old.iff"));
  pptQaChoice=24;
@@ -239,9 +244,12 @@ int main(void){
  assert(ppt_browser_import("long.wav","long.wav"));
  assert(!song->modified && song->samples[0].length==savedSplitLength && !memcmp(savedSplit,song->sampleData,64));
  for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=0;
- assert(ppt_browser_import("huge.wav","huge.wav"));
- assert(!song->modified && song->samples[0].length==savedSplitLength && !memcmp(savedSplit,song->sampleData,64));
- puts("WAV split: 2/4 equal parts, PCM continuity, occupied slots, no-space and >4 rejection OK");
+ song->samples[1].length=64;
+ assert(ppt_browser_import("huge.wav","huge.wav"));pptQaSplitVerify(4);
+ assert(song->modified && song->samples[0].length==131070);
+ for(int i=2;i<MOD_SAMPLES;i++)song->samples[i].length=0;
+ pptQaParts=4;assert(ppt_browser_import("tone.wav","tone.wav"));pptQaSplitVerify(4);pptQaParts=0;
+ puts("WAV split: manual parts, PCM continuity, occupied slots, no-space and oversized trim OK");
  /* BPM UI and offline conversion: real mouse and native decimal editor. */
  {
  ui.diskOpScreenShown=false;ui.posEdScreenShown=false;ui.editOpScreenShown=false;
@@ -310,7 +318,7 @@ int main(void){
  ppt_views_begin();int counts[4]={0};
  for(int y=0;y<255;y++)for(int x=0;x<320;x++){
   int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
-  assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0x1c1c1c);
+  assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0x606060);
   int ch=(x-32)/72;assert(x>=32 && ch<4 && x<32+ch*72+64 && y>=12 && y<244);counts[ch]++;
  }
  assert(counts[0]>20 && counts[1]==0 && counts[2]>20 && counts[3]>20);

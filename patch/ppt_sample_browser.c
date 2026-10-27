@@ -29,6 +29,7 @@ static float *pcm;
 static int frames,sourceHz;
 static double previewPos;
 static bool previewPlaying,importDialog;
+static int importParts=1;
 static int importPitch=28; /* E-3: default on EVERY import */
 static char cachedPath[PATH_MAX+1],cachedName[PATH_MAX+1];
 static char message[35]="SELECT A WAV";
@@ -149,11 +150,10 @@ int ppt_browser_target_length(int pitch){
 /* Equal even-byte MOD chunks; only the final chunk may need zero padding. */
 static int splitPlan(int length,int *chunk){
     if(length<2 || config.maxSampleLength<2)return 0;
-    for(int parts=1;parts<=4;parts*=2){
-        int size=(int)(((int64_t)length+parts*2-1)/(parts*2))*2;
-        if(size<=config.maxSampleLength){*chunk=size;return parts;}
-    }
-    return 0;
+    int parts=importParts;
+    int size=(int)(((int64_t)length+parts*2-1)/(parts*2))*2;
+    if(size>config.maxSampleLength)size=config.maxSampleLength&~1;
+    *chunk=size;return parts;
 }
 static bool splitSlots(int parts,int slots[4]){
     slots[0]=editor.currSample;int found=1;
@@ -162,6 +162,11 @@ static bool splitSlots(int parts,int slots[4]){
         if(song->samples[slot].length==0)slots[found++]=slot;
     }
     return found==parts;
+}
+int ppt_browser_import_parts(void){return importParts;}
+void ppt_browser_adjust_parts(int direction){
+    if(direction<0 && importParts>1)importParts/=2;
+    if(direction>0 && importParts<4)importParts*=2;
 }
 bool ppt_browser_import_dialog(void){return importDialog;}
 int ppt_browser_import_pitch(void){return importPitch;}
@@ -178,11 +183,12 @@ void ppt_browser_draw_import_choice(void){
     textOut2(20,155,line);
     snprintf(line,sizeof(line),"%.2f HZ  %d BYTES",PAULA_PAL_CLK/periodTable[importPitch],ppt_browser_target_length(importPitch));
     textOut2(20,166,line);
-    textOut2(20,177,"UP/DOWN NOTE  LEFT/RIGHT OCT");
+    textOut2(20,177,"UP/DOWN NOTE  LEFT/RIGHT PARTS");
     int chunk=0,slots[4];int parts=splitPlan(ppt_browser_target_length(importPitch),&chunk);
     if(!parts)snprintf(line,sizeof(line),"TOO LARGE - MAX 4 SLOTS");
     else if(!splitSlots(parts,slots))snprintf(line,sizeof(line),"NEED %d SLOTS - NOT ENOUGH FREE",parts);
-    else snprintf(line,sizeof(line),"%d X %d B / MAX %d",parts,chunk,config.maxSampleLength);
+    else snprintf(line,sizeof(line),"%d X %d B%s",parts,chunk,
+        (int64_t)parts*chunk<ppt_browser_target_length(importPitch)?" - TRIM END":"");
     textOut2(20,188,line);
     textOut2(20,202,"L2/R2 SLOT  A LOAD  B CANCEL");
 }
@@ -198,7 +204,8 @@ bool ppt_browser_import(const char *path,const char *name){
     }
     if(!prepare(absolute,name)){showBrowserError();return true;}
     stopPreview();
-    importPitch=28;
+    importPitch=28;importParts=1;
+    while(importParts<4 && ppt_browser_target_length(importPitch)>importParts*config.maxSampleLength)importParts*=2;
     importDialog=true;
     uint32_t pitch=askBox(ASKBOX_PPT_WAV_IMPORT,"WAV RESAMPLE");
     importDialog=false;
@@ -210,7 +217,8 @@ bool ppt_browser_import(const char *path,const char *name){
     int8_t *converted=calloc((size_t)chunk*parts,1);
     if(!converted){displayErrorMsg("OUT OF MEMORY !");return true;}
     const double target=PAULA_PAL_CLK/periodTable[pitch];
-    ppt_resample_pcm(pcm,frames,sourceHz,target,converted,length);
+    const int kept=length<chunk*parts?length:chunk*parts;
+    ppt_resample_pcm(pcm,frames,sourceHz,target,converted,kept);
     int loopA=-1,loopB=-1;
     if(sourceLoopStart>=0){
         loopA=(int)llround(sourceLoopStart*target/sourceHz)&~1;
@@ -225,7 +233,7 @@ bool ppt_browser_import(const char *path,const char *name){
         memset(&song->sampleData[s->offset+chunk],0,config.maxSampleLength-chunk);
         s->length=chunk;s->fineTune=0;s->volume=64;s->loopStart=0;s->loopLength=2;
         /* MOD cannot represent a loop spanning two different sample slots. */
-        if(loopA>=begin && loopB<=begin+chunk && loopB<=length && loopB-loopA>=2){
+        if(loopA>=begin && loopB<=begin+chunk && loopB<=kept && loopB-loopA>=2){
             s->loopStart=loopA-begin;s->loopLength=loopB-loopA;
         }
         memset(s->text,0,sizeof(s->text));

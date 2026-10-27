@@ -895,6 +895,24 @@ int main(void){
   assert(state.header.patternTable[8]==18 && state.header.patternTable[9]==19);
 
   puts("PPT v0.3.12: PT2 v0.3.10 playback + MOD/SAMPLE name carousel OK");
+  /* POSITION range clipboard survives loop clear and inserts before destination. */
+  memset(held,0,sizeof(held));editor.songPlaying=false;
+  ui.posEdScreenShown=true;ui.diskOpScreenShown=false;ui.samplerScreenShown=false;
+  ui.askBoxShown=false;ui.editTextFlag=false;song->header.songLength=5;
+  for(int i=0;i<5;i++)song->header.patternTable[i]=(uint16_t)(10+i);
+  song->currPos=1;beginPosMark();movePosMark(1);confirmPosMark();
+  assert(posClipCount==2 && posClip[0]==11 && posClip[1]==12);
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);song->currPos=3;
+  buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_SELECT);
+  const int expectedOrders[]={10,11,12,11,12,13,14};
+  assert(song->header.songLength==7);
+  for(int i=0;i<7;i++)assert(song->header.patternTable[i]==expectedOrders[i]);
+  editor.songPlaying=true;pastePositionRange();assert(song->header.songLength==7);
+  editor.songPlaying=false;song->header.songLength=127;pastePositionRange();
+  assert(song->header.songLength==127);
+  song->header.songLength=7;
+  puts("POSITION clipboard: selected range, loop-clear retention, shifted insertion, playback/full guards OK");
   return 0;
 }
 

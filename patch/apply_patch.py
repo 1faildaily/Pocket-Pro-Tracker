@@ -500,8 +500,8 @@ void ppt_browser_draw_import_dialog(void)
                 if (dialogType == ASKBOX_PPT_WAV_IMPORT &&
                     (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN))
                 {
-                    const int delta=key==SDLK_UP?1:key==SDLK_DOWN?-1:key==SDLK_LEFT?-12:12;
-                    ppt_browser_adjust_pitch(delta);
+                    if(key==SDLK_LEFT || key==SDLK_RIGHT)ppt_browser_adjust_parts(key==SDLK_LEFT?-1:1);
+                    else ppt_browser_adjust_pitch(key==SDLK_UP?1:-1);
                     d.defaultReturnValue=ppt_browser_import_pitch();
                     d.buttons[0].returnValue=d.defaultReturnValue;
                     continue;
@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.36: use the native quantized RECORD path for handheld A.
+# PPT 0.3.37: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
