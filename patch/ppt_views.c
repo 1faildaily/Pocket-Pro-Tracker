@@ -87,6 +87,23 @@ static void drawPatternScopes(uint32_t bg)
         }
     }
 }
+/* POSITION's existing empty frame: 0,99 .. 119,243.
+   All channels share one plotting area; borders and transport remain native. */
+static void drawPositionScopes(void)
+{
+    static const uint32_t colors[4]={0x888888,0xFF5555,0xFFFFFF,0x880000};
+    for(int ch=0;ch<4;ch++)for(int i=1;i<SCOPE_WIDTH;i++){
+        if(scopeTrace[ch][i-1]<0 || scopeTrace[ch][i]<0)continue;
+        int x=2+(i-1)*115/(SCOPE_WIDTH-1),y=101+(scopeTrace[ch][i-1]-197)*140/(SCOPE_HEIGHT-1);
+        const int endX=2+i*115/(SCOPE_WIDTH-1),endY=101+(scopeTrace[ch][i]-197)*140/(SCOPE_HEIGHT-1);
+        int dx=endX-x,dy=abs(endY-y),sy=y<endY?1:-1,error=dx-dy;
+        for(;;){
+            if(x>=2 && x<=117 && y>=101 && y<=241)video.frameBuffer[y*SCREEN_W+x]=colors[ch];
+            if(x==endX && y==endY)break;
+            int e2=error*2;if(e2>-dy){error-=dy;x++;}if(e2<dx){error+=dx;y+=sy;}
+        }
+    }
+}
 static void fullscreenPattern(void)
 {
     const uint32_t bg=video.palette[PAL_BACKGRD],fg=video.palette[PAL_PATTXT];
@@ -148,13 +165,13 @@ void ppt_views_begin(void)
     const bool modList=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD ;
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
     const bool bpm=ui.editOpScreenShown && ui.editOpScreen==2 && !ui.askBoxShown && !ui.diskOpScreenShown && !ui.posEdScreenShown;
-    const bool position=ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag;
+    const bool position=ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && (!ui.editTextFlag || textEdit.object==PTB_PE_PATTNAME);
     const bool samplerNote=ui.samplerScreenShown && !ui.askBoxShown && !ui.changingSmpResample;
     const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP;
     if(!full && row<0 && !sample && !modList && !bpm && !position && !samplerNote)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
-    if(position){ppt_position_draw_full();drawNativeMouse();return;}
+    if(position){capturePatternScopes();ppt_position_draw_full();drawPositionScopes();drawNativeMouse();return;}
     if(modList){
         ppt_disk_draw_full();
         if(ui.editTextFlag && textEdit.object==PTB_SONGNAME)

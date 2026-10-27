@@ -40,3 +40,5 @@ int ppt_position_cursor(void);
 void ppt_position_set_cursor(int pos);
 
 int ppt_position_first(void);
+
+bool ppt_position_pattern_active(void);

@@ -6,3 +6,5 @@ void sampleDownButton(void);
 
 #define PTB_SONGNAME 1
 #define PTB_SAMPLENAME 2
+
+#define PTB_PE_PATTNAME 1234

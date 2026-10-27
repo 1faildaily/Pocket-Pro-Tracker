@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.39: use the native quantized RECORD path for handheld A.
+# PPT 0.3.43: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -732,6 +732,8 @@ void ppt_position_draw_full(void){
   if(pos==song->header.songLength){textOut(160,y,"+++ APPEND",fg);continue;}
   int pat=song->header.patternTable[pos];printTwoDecimals(160,y,pat,fg);
   if(pat>=0 && pat<MAX_PATTERNS)textOutN(184,y,posEdNames[pat],15,fg);
+  if(pos==current && ui.editTextFlag && textEdit.object==PTB_PE_PATTNAME)
+    fillRect(184+textEdit.cursorBlock*8,y+5,7,2,video.palette[PAL_TEXTMARK]);
  }
  drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
 }
@@ -747,7 +749,8 @@ if p.exists():
     /* PPT_POSITION_MOUSE: never click hidden native pattern controls. */
     if(ui.posEdScreenShown && !ui.askBoxShown && !ui.editTextFlag && !ui.diskOpScreenShown && mouse.leftButtonPressed){
         if(mouse.x>=120 && mouse.x<308 && mouse.y>=22 && mouse.y<244){int first=ppt_position_first();
-            int pos=first+(mouse.y-23)/7;if(pos<=song->header.songLength)ppt_position_set_cursor(pos);
+            int pos=first+(mouse.y-23)/7;if(pos<=song->header.songLength){ppt_position_set_cursor(pos);
+                if(mouse.x>=184 && pos<song->header.songLength)posEdEditName();}
             return true;}
         if(mouse.y>=99 && mouse.y<244)return true;
     }
@@ -765,4 +768,66 @@ if p.exists():
    a='void '+name+'(void)\n{'
    assert a in s
    s=s.replace(a,a+'\n    if(ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag){ppt_position_set_cursor(ppt_position_cursor()+('+str(step)+'));return;}',1)
+  p.write_text(s)
+
+# PPT_POSITION_PATTERN_CURSOR: UI-only distinction between pattern and song playback.
+p=root/'src'/'pt2_replayer.c'
+s=p.read_text()
+if 'PPT_POSITION_PATTERN_CURSOR' not in s:
+ a='\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;'
+ assert s.count(a)==1
+ s=s.replace(a,'''	/* PPT_POSITION_PATTERN_CURSOR: allow browsing while auditioning one pattern. */
+    if(ppt_position_pattern_active()){
+        song->currRow=song->row;ui.updatePosEd=true;ui.updatePatternData=true;return;
+    }
+'''+a,1)
+ p.write_text(s)
+
+# PPT_POSITION_NAME_CAROUSEL: native 15-char name buffer, extended-list coordinates.
+p=root/'src'/'pt2_posed.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_POSITION_NAME_CAROUSEL' not in s and 'void posEdEditName(void)' in s:
+  a='\t\ttextEdit.cursorStartY = 58;\n\t\ttextEdit.scrollable = true;'
+  assert s.count(a)==1
+  s=s.replace(a,'\t\t/* PPT_POSITION_NAME_CAROUSEL */\n\t\ttextEdit.cursorStartY = 28+(ppt_position_cursor()-ppt_position_first())*7;\n\t\ttextEdit.scrollable = false;',1)
+  p.write_text(s)
+# PPT_PATTERN_NAMES_SIDECAR: metadata only, MOD serialization stays byte-for-byte original.
+for name in ['ppt_pattern_names.c','ppt_pattern_names.h']:
+ shutil.copy2(pathlib.Path(__file__).with_name(name),root/'src'/name)
+p=root/'src'/'pt2_posed.c'
+if p.exists():
+ s=p.read_text()
+ if 'char *ppt_pattern_name(' not in s:
+  s+='\nchar *ppt_pattern_name(int pattern){return pattern>=0 && pattern<MAX_PATTERNS?posEdNames[pattern]:NULL;}\n'
+  p.write_text(s)
+p=root/'src'/'pt2_module_saver.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_PATTERN_NAMES_SAVE' not in s:
+  s='#include "ppt_pattern_names.h"\n'+s
+  a='\treturn modSave(fileName);'
+  assert s.count(a)==1
+  s=s.replace(a,'\t/* PPT_PATTERN_NAMES_SAVE: only after successful native MOD save. */\n\tbool saved=modSave(fileName);\n\tif(saved && !ppt_pattern_names_save(fileName))displayMsg("MOD OK NAMES ERR");\n\treturn saved;',1)
+  p.write_text(s)
+p=root/'src'/'pt2_module_loader.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_PATTERN_NAMES_LOAD' not in s:
+  s='#include "ppt_pattern_names.h"\n'+s
+  a='\treturn newMod;'
+  assert s.count(a)==1
+  s=s.replace(a,'\tppt_pattern_names_prepare(fileName); /* PPT_PATTERN_NAMES_LOAD */\n'+a,1)
+  a='\tposEdClearNames();'
+  assert s.count(a)==1
+  s=s.replace(a,a+'\n\tif(!ppt_pattern_names_load())displayMsg("NAMES FILE ERROR");',1)
+  p.write_text(s)
+# Keep metadata out of MODULE and SAMPLE file lists, including mod.name prefixes.
+p=root/'src'/'pt2_diskop.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_NAMES_FILTER' not in s and 'static bool listEntry(fileEntry_t *f)' in s:
+  a='\tint32_t entryName = (int32_t)UNICHAR_STRLEN(f->nameU);'
+  assert s.count(a)==1
+  s=s.replace(a,a+'\n\t/* PPT_NAMES_FILTER */\n\tif(!f->isDir && entryName>=13 && !UNICHAR_STRNICMP(&f->nameU[entryName-13],".patterns.txt",13))return false;',1)
   p.write_text(s)

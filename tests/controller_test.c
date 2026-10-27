@@ -919,7 +919,23 @@ int main(void){
   directionAction(2);assert(song->header.patternTable[7]==11);
   ppt_position_set_cursor(9);directionAction(3);
   assert(song->header.songLength==10 && song->header.patternTable[9]==1);
+  posAppend=false;song->currPos=2;song->header.patternTable[2]=17;song->currPattern=3;
+  editor.songPlaying=false;startPlayback(PPT_PLAY_PATTERN);
+  assert(editor.playMode==PLAY_MODE_PATTERN && playPatt==17 && playRow==0 && song->currPos==2);
+  assert(ppt_position_pattern_active());
+  browsePos(1);assert(song->currPos==3);
+  startPlayback(PPT_PLAY_PATTERN);assert(!editor.songPlaying && !ppt_position_pattern_active());
+  clearPosLoop();startPlayback(PPT_PLAY_SONG);
+  assert(editor.playMode==PLAY_MODE_NORMAL && playPos==3 && !ppt_position_pattern_active());
+  startPlayback(PPT_PLAY_SONG);
   puts("POSITION clipboard: selected range, loop-clear retention, shifted insertion, playback/full guards OK");
+  char patternName[16];memset(patternName,'a',15);patternName[15]=0;
+  ui.editTextFlag=true;textEdit.type=TEXT_EDIT_STRING;textEdit.object=PTB_PE_PATTNAME;
+  textEdit.textStartPtr=patternName;textEdit.textEndPtr=patternName+15;
+  textEdit.textPtr=patternName+15;
+  assert(currentNameEdit(NULL));nameCycle(1);
+  assert(textEdit.textPtr==patternName+14 && patternName[15]==0);
+  nameFinish();assert(!ui.editTextFlag);
   return 0;
 }
 
@@ -929,3 +945,4 @@ void ppt_bpm_previous(void){}
 void ppt_bpm_direction(int d){(void)d;}
 
 void ppt_browser_toggle_mode(void){}
+void modSetPos(int16_t pos,int16_t row){if(pos>=0)song->currPos=(uint16_t)pos;if(row>=0)song->currRow=(uint16_t)row;}

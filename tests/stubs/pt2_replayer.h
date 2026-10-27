@@ -6,3 +6,4 @@ void setPattern(int16_t pattern);
 
 void incPatt(void);
 void decPatt(void);
+void modSetPos(int16_t pos,int16_t row);
