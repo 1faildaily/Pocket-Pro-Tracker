@@ -62,7 +62,7 @@ static void fullscreenPattern(void)
     textOut(64,2,"PAT",text);printTwoDecimals(88,2,song->currPattern,text);
     textOut(120,2,"LEN",text);printThreeDecimals(144,2,song->header.songLength,text);
     textOut(184,2,"SMP",text);printTwoHex(208,2,editor.currSample+1,text);
-    textOut(240,2,ppt_live_edit_active()?"LIVE":"EDIT",text);
+    textOut(240,2,editor.currMode==MODE_RECORD?"REC":ppt_live_edit_active()?"LIVE":"EDIT",text);
     const int first=firstVisibleRow(),ghost=ppt_ghost_row(song->currPattern);
     int y=12,currentY=12;
     for(int i=0;i<32;i++){
@@ -104,11 +104,13 @@ void ppt_views_begin(void)
 {
     overlaySaved=false;
     const bool full=ppt_full_pattern_active();
+    const bool modList=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD && !ui.askBoxShown && !ui.editTextFlag;
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
     const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP;
-    if(!full && row<0 && !sample)return;
+    if(!full && row<0 && !sample && !modList)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
+    if(modList){ppt_disk_draw_full();drawNativeMouse();return;}
     /* Solid soft bar only: no contrasting one-pixel underline. */
     if(sample){
         if(ui.askBoxShown && ppt_browser_import_dialog()){

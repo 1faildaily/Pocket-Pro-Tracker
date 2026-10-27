@@ -523,3 +523,114 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     assert ds.count(anchor)==1
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
+
+# PPT 0.3.29: use the native quantized RECORD path for handheld A.
+e=root/'src'/'pt2_edit.c'
+es=e.read_text()
+if 'void pptRecordInsertedNote(' not in es:
+    anchor='\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode)'
+    assert es.count(anchor)==1
+    wrapper=r'''
+void pptRecordInsertedNote(int8_t pitch, int8_t sampleIndex)
+{
+    if(song == NULL || !editor.songPlaying || editor.currMode != MODE_RECORD ||
+       pitch < 0 || pitch >= 36 || sampleIndex < 0 || sampleIndex >= MOD_SAMPLES)
+        return;
+    const int8_t savedSample=editor.currSample;
+    editor.currSample=sampleIndex;
+    jamAndPlaceSample(SDL_SCANCODE_UNKNOWN, true, pitch, false);
+    editor.currSample=savedSample;
+}
+'''
+    es=es.replace(anchor,'\n'+wrapper+anchor,1)
+    e.write_text(es)
+# Fit decimal EDITSKIP 00..16 into the native 32px flag box; preserve M flags.
+vs=vis.read_text()
+if 'PPT_EDITSKIP_16' not in vs:
+    old="\t\tcharOutBg(24, 102, '0' + editor.editMoveAdd, video.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);"
+    assert vs.count(old)==1
+    vs=vs.replace("charOutBg(16, 102, ' '","charOutBg(8, 102, ' '",1)
+    vs=vs.replace("charOut(16, 102, 'M'","charOut(8, 102, 'M'",1)
+    vs=vs.replace(old,'\t\t/* PPT_EDITSKIP_16: two decimal digits. */\n\t\tprintTwoDecimalsBg(16, 102, editor.editMoveAdd, video.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);',1)
+    vs=vs.replace('!ui.samplerScreenShown && !(ui.diskOpScreenShown && diskop.mode == DISKOP_MODE_SMP)','!ui.samplerScreenShown && !ui.diskOpScreenShown',1)
+    vis.write_text(vs)
+# Runtime page size: sample view stays at ten lines, MOD view gets 32.
+dh=root/'src'/'pt2_diskop.h'
+if dh.exists():
+    hs=dh.read_text()
+    if '#define DISKOP_LINES 10' in hs:
+        hs=hs.replace('#define DISKOP_LINES 10','int ppt_disk_visible_lines(void);\n#define DISKOP_LINES (ppt_disk_visible_lines())',1)
+        dh.write_text(hs)
+ds=disk.read_text()
+if 'PPT_FULL_MOD_LIST' not in ds:
+    # The native top list remains 10 lines in the base framebuffer. Extra rows
+    # are painted only in the upload overlay; native scrolling uses runtime size.
+    anchor='for (int32_t i = 0; i < DISKOP_LINES; i++)'
+    idx=ds.index('void diskOpRenderFileList(void)')
+    head,tail=ds[:idx],ds[idx:]
+    assert tail.count(anchor)==1
+    tail=tail.replace(anchor,'for (int32_t i = 0; i < 10; i++)',1)
+    ds=head+tail
+    ds+=r'''
+/* PPT_FULL_MOD_LIST: presentation and list-page geometry, never MOD encoding. */
+int ppt_disk_visible_lines(void){return diskop.mode==DISKOP_MODE_MOD?32:10;}
+void ppt_disk_draw_full(void)
+{
+    drawFramework1(0,33,307,197);
+    if(diskop.cached && !diskop.isFilling && !diskop.forceStopReading && diskOpEntry != NULL)
+    {
+        const int selected=ppt_disk_selected_row();
+        for(int i=0;i<32 && diskop.scrollOffset+i<diskop.numEntries;i++)
+        {
+            fileEntry_t *entry=&diskOpEntry[diskop.scrollOffset+i];
+            char *name=diskOpGetAnsiEntry(i);
+            if(name==NULL)continue;
+            int y=35+i*6;
+            if(i==selected)fillRect(8,y,295,6,0x00333333);
+            int x=config.hideDiskOpDates?8:64;
+            int maxChars=config.hideDiskOpDates?(entry->isDir?31:30):(entry->isDir?24:23);
+            printEntryName(name,(int)strlen(name),maxChars,x,y);
+            if(entry->isDir)textOut(264,y,"(DIR)",video.palette[PAL_QADSCP]);
+            else{
+                if(!config.hideDiskOpDates)textOut(8,y,entry->dateChanged,video.palette[PAL_QADSCP]);
+                printFileSize(entry,256,y);
+            }
+        }
+    }
+    else textOut(8,36,"READING DIRECTORY",video.palette[PAL_QADSCP]);
+    drawFramework1(307,33,13,197);
+    drawUpButton(308,34);drawDownButton(308,208);drawButton1(308,220,11,10,"B");
+    drawFramework1(308,46,11,160);
+    textOut(310,110,"E",video.palette[PAL_GENTXT]);textOut(310,119,"X",video.palette[PAL_GENTXT]);
+    textOut(310,128,"I",video.palette[PAL_GENTXT]);textOut(310,137,"T",video.palette[PAL_GENTXT]);
+    drawFramework1(0,232,320,11);
+    textOut(8,235,"SONGNAME:",video.palette[PAL_GENTXT]);
+    for(int i=0;i<20;i++)charOut(104+i*8,235,song->header.name[i]?song->header.name[i]:'_',video.palette[PAL_GENTXT]);
+    drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
+}
+'''
+    disk.write_text(ds)
+# Native mouse hit testing follows the extended list. Top controls are unchanged.
+m=root/'src'/'pt2_mouse.c'
+if m.exists():
+    ms=m.read_text()
+    if 'PPT_MOD_LIST_HIT_TEST' not in ms:
+        anchor='static int32_t checkGUIButtons(void)\n{'
+        assert ms.count(anchor)==1
+        custom=r'''
+    /* PPT_MOD_LIST_HIT_TEST: no hidden middle/pattern controls under the list. */
+    if(ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD && !ui.askBoxShown && !ui.editTextFlag)
+    {
+        if(mouse.x>=2 && mouse.x<=304 && mouse.y>=34 && mouse.y<228)return PTB_DO_FILEAREA;
+        if(mouse.x>=308 && mouse.x<320 && mouse.y>=34 && mouse.y<230){
+            if(mouse.y<46)return PTB_DO_SCROLLUP;
+            if(mouse.y<208)return PTB_DO_EXIT;
+            if(mouse.y<220)return PTB_DO_SCROLLDOWN;
+            return PTB_DO_SCROLLBOT;
+        }
+        if(mouse.y>=232 && mouse.y<243)return PTB_SONGNAME;
+        if(mouse.y>=33)return -1;
+    }
+'''
+        ms=ms.replace(anchor,anchor+custom,1)
+        m.write_text(ms)

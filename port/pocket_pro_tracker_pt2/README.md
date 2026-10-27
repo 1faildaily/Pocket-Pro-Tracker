@@ -1,70 +1,66 @@
-# Pocket Pro Tracker v0.3.28 - wszystkie nuty importu, E-3 domyślnie
+# Pocket Pro Tracker v0.3.29 - EDITSKIP 16 / L3 RECORD / pełna lista MOD
 
-Baza: v0.3.27. Anbernic RG35XX Pro / muOS / PortMaster.
+Baza: v0.3.28. Anbernic RG35XX Pro / muOS / PortMaster.
 
-## Import WAV - karuzela C-1...B-3
-- A na WAV w LOAD SAMPLE otwiera natywne okno importu.
-- Przy KAŻDYM otwarciu początkowo wybrana jest E-3 (indeks 28).
-- Dostępne wszystkie 36 nut oryginalnego PT2, C-1...B-3, finetune 0.
-- D-pad góra / dół: półton w górę / dół.
-- D-pad lewo / prawo: oktawa w dół / górę.
-- Na końcach zakresu wybór zatrzymuje się, nie zawija.
-- A / przycisk LOAD: przelicz i załaduj do aktualnego slotu.
-- B / CANCEL: anuluj bez zmiany zawartości sampla.
-- Widoczne: nuta, rzeczywista częstotliwość PAL z tabeli okresów PT2,
-  wynikowa liczba bajtów, limit i numer slotu.
-- Częstotliwość = oryginalny PAL_PAULA_CLK / periodTable[nuta].
-  E-3 to ok. 20864.09 Hz. Nie używamy stroju PC ani przybliżenia z równych półtonów.
-- Po imporcie właściwa oryginalna prędkość WAV jest uzyskiwana na wybranej nucie.
-- Zbyt długi wynik (ponad 131070 bajtów) zostaje odrzucony, bez obcinania.
+## 1. EDITSKIP 0...16 i przycisk A
+- SELECT + lewo/prawo zmienia EDITSKIP w zakresie 0...16.
+- Zwykłe A w polu NOTE wpisuje zapamiętaną nutę i bieżący numer sampla,
+  a po puszczeniu A przesuwa kursor o EDITSKIP wierszy.
+- Kolejne A wpisuje tę samą nutę w następnej pozycji.
+- Przykład dla kroku 4: ROW 00 -> 04 -> 08 -> 12.
+- EDITSKIP 0 pozostawia kursor w miejscu; przejście za ROW 63 zawija do 00.
+- A + kierunek nadal zmienia pole w miejscu, bez dodatkowego skoku.
+- A+B usuwa w miejscu, bez dodatkowego skoku.
+- Wstawianie parametrów i numeru sampla pod A nie zyskuje skoku NOTE.
+- Oryginalny wskaźnik kroku pokazuje dwie cyfry; obie flagi M zachowane.
+- SELECT + góra/dół nadal nawiguje według EDITSKIP (minimum 1 dla kroku 0).
 
-## Wybór SAMPLE NUMBER podczas PLAY i importu
-- W LOAD SAMPLE L2 / R2 wybierają poprzedni / następny slot 01...1F.
-- Działa podczas odtwarzania i w otwartym oknie resamplingu.
-- Zmiana slotu nie wysyła lewego/prawego kliknięcia i nie potwierdza/anuluje okna.
-- Widoczny numer SLOT odświeża się natychmiast.
-- LOAD zapisuje do slotu wybranego w momencie zatwierdzenia.
-- X / Y pozostają właściwymi przyciskami myszy, A zatwierdza, B anuluje.
+## 2. Klik lewego analoga L3 - natywny RECORD
+- L3 inicjuje RECORD bieżącego patternu od ROW 00, tak jak natywne RECORD / prawy SHIFT PT2.
+- Ponowne L3 zatrzymuje nagrywanie i odtwarzanie. START również zatrzymuje.
+- A podczas RECORD wpisuje zapamiętaną nutę i bieżący sample na wybranym kanale.
+- W tym trybie wiersz prowadzi odtwarzacz; EDITSKIP nie przeskakuje ręcznie.
+- Używany jest oryginalny jamAndPlaceSample(), jego kwantyzacja i odsłuch.
+- RECORD jest uruchamiany pełną natywną inicjalizacją modPlay(), nie przez
+  zmianę MODE_PLAY -> MODE_RECORD na działającym odtwarzaczu.
+- LIVE EDIT nie zamraża kursora podczas RECORD. Pełny pattern pokazuje REC.
+- L3 z DISK-OP / POSITION / SAMPLER przechodzi do patternu i uruchamia RECORD.
+- Okna potwierdzeń i edycja tekstu zachowują pierwszeństwo.
+- Mapowanie L3: standardowy Linux BTN_THUMBL (317). Wymaga potwierdzenia na konsoli.
 
-## Tło LOAD SAMPLE
-- Dolny pattern nie jest odświeżany w LOAD SAMPLE, również podczas PLAY.
-- Normalnie dolny obszar zajmuje podgląd WAV.
-- Podczas wyboru nuty jest czyste tło i karuzela, bez patternu i fragmentów przebiegu.
-- Natywne okno jest odrysowywane nad końcowym podglądem, po aktualizacji GUI.
-- Po wyjściu z trybu sampli wymuszamy odświeżenie normalnego patternu.
-- Zmiana dotyczy rysowania, nie zegara ani efektów odtwarzacza.
+## 3. LOAD MODULE / SAVE MODULE - lista na pełną wysokość
+- W trybie MOD lista ma 32 pozycje na ekranie, od nagłówka do dolnego paska.
+- Zachowane natywne przyciski LOAD MODULE / SAVE MODULE i obsługa zapisu.
+- D-pad przewija wybór, A aktywuje pozycję, X pozostaje lewym kliknięciem myszy.
+- Kliknięcia w rozszerzonej części listy i przyciski przewijania mają poprawione obszary trafienia.
+- Przewijanie klawiaturą, myszą i kontrolerem korzysta z nowego rozmiaru strony.
+- Na dole widoczne SONGNAME i STATUS, po prawej przewijanie oraz EXIT.
+- X na SONGNAME otwiera oryginalną edycję nazwy; na czas edycji / potwierdzeń
+  wraca natywny układ, aby nie zasłaniać pól i okien PT2.
+- Struktura pliku MOD i algorytm SAVE MODULE nie są zmieniane.
 
-## Podgląd WAV zachowany
-D-pad wybiera plik, B uruchamia / zatrzymuje odsłuch z prędkością źródłową.
-Przebieg jest widoczny na dole DISK-OP. Podgląd używa osobnego bufora,
-nie nadpisuje slotu i nie oznacza modułu jako zmienionego.
-Zmiana pliku / katalogu / widoku zatrzymuje odsłuch.
-Nowa ścieżka dotyczy WAV. Pozostałe formaty zachowują loader PT2 bez karuzeli.
-Sprawdzone PCM 8/16/24/32-bit i float32; stereo jest mieszane do mono.
-Limit pliku źródłowego to 32 MiB. Nie gwarantujemy float64 przez decoder SDL2.
-Prosta pętla smpl z WAV jest przeliczana do nowej częstotliwości.
-Import używa mono signed 8-bit, finetune 0, resamplingu windowed-sinc.
-Kod miksera, replayera, Pauli i zapisu MOD nie zmienił się względem v0.3.27.
-
-## Zachowane
-MONO przy starcie, sample do 128 KB, pełny pattern pod R3,
-A+B NOTE+sample, Y usuwa zaznaczenie, schowek, LIVE EDIT i POSITION LOOP.
-MENU nie przełącza pełnego patternu; kombinacje MENU zachowane.
+## LOAD SAMPLE pozostaje jak w v0.3.28
+- Nadal 10 pozycji na liście i podgląd WAV na dole.
+- B odsłuchuje WAV bez zmiany slotu, A otwiera import C-1...B-3, domyślnie E-3.
+- L2/R2 zmienia slot również podczas PLAY i w oknie importu.
+- Brak animowanego patternu pod podglądem i oknem.
+- MONO, sample do 128 KB, karuzela, resampling, schowek i POSITION LOOP zachowane.
 
 ## Instalacja
-Podmień pliki repozytorium, również .github -> Commit -> Push.
-Artefakt: PPT_v0.3.28_AllNotes_E3_SampleSlots_ARM64.
+Podmień pliki repozytorium, także .github -> Commit -> Push.
+Artefakt: PPT_v0.3.29_EditSkip_Record_FullModList_ARM64.
 W nim pocket_pro_tracker_pt2.zip do instalacji przez PortMaster.
 
-## Sprawdzone
-- Testy kontrolera, integracji i idempotencji patcha.
-- Wszystkie 36 nut rzeczywiście zaimportowane przez nową ścieżkę.
-- E-3 przy każdym otwarciu, ograniczenia karuzeli, pamięć nuty po imporcie.
-- L2/R2 podczas PLAY oraz przy otwartym oknie, bez zdublowanych kliknięć.
-- Import do zmienionego slotu, poprzedni slot pozostaje niezmieniony.
-- Brak rysowania patternu pod oknem i podglądem w LOAD SAMPLE.
-- Anulowanie, błędny / za długi WAV, długość i ton 440 Hz, pętle WAV.
-- Pełna lokalna kompilacja x86-64; dodatkowy test ASan/UBSan.
-- Kontrola rzeczywistego renderu okna i czystego tła.
+## Weryfikacja
+- Testy kontrolera: krok do 16, powtarzanie A, zawijanie, A+kierunek i A+B bez skoku.
+- L3 inicjuje RECORD, A trafia do natywnej funkcji nagrywania, ponowne L3 zatrzymuje.
+- Test na rzeczywistym kodzie PT2: wpis nuty do bieżącego ROW, kwantyzacja do ROW 08,
+  zachowanie efektów i brak ręcznego EDITSKIP w RECORD.
+- MOD lista: 32 pozycje, granice przewijania i trafienia myszy w dolne pozycje,
+  SAVE MODULE, EXIT i przewijanie. LOAD SAMPLE nadal ma stronę 10 pozycji.
+- Regresja podglądu/importu WAV dla wszystkich 36 nut i domyślnego E-3.
+- Pełna lokalna kompilacja x86-64, ASan/UBSan i kontrola rzeczywistego renderu.
+- Replayer, Paula, mikser, zapis MOD i moduł importu WAV bez zmian względem v0.3.28.
 
-Do potwierdzenia pozostają GitHub Actions ARM64 i działanie na Anbernicu.
+Do potwierdzenia: GitHub Actions ARM64 i fizyczny Anbernic, szczególnie kod kliku L3.
+Przed nagrywaniem na ważnym utworze użyj kopii MOD-a.

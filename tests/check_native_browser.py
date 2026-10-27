@@ -34,6 +34,31 @@ void pptQaSlot(void){
  ASSERT(!mouseDownForwarded[PPT_BTN_R2]);
 }
 ''')
+ p=src/'ppt_input.c';p.write_text(p.read_text()+'''
+void pptQaRecord(void){
+ ui.diskOpScreenShown=false;ui.samplerScreenShown=false;ui.posEdScreenShown=false;
+ ui.askBoxShown=false;ui.editTextFlag=false;editor.currMode=MODE_IDLE;editor.songPlaying=false;
+ ASSERT(buttonFromRaw(BTN_THUMBL)==PPT_BTN_L3);
+ lastPitch=24;editor.currSample=0;cursor.channel=0;cursor.pos=0;editor.editMoveAdd=16;
+ config.quantizeValue=0;song->speed=6;paulaSetup(48000,MODEL_A1200);
+ buttonEvent(PPT_BTN_L3,true);releaseButton(PPT_BTN_L3);
+ ASSERT(editor.currMode==MODE_RECORD && editor.songPlaying);
+ song->currRow=7;song->row=7;song->tick=1;
+ note_t *note=&song->patterns[song->currPattern][7*4];note->command=0xA;note->param=0x0F;
+ buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
+ ASSERT(note->period==214 && note->sample==1 && note->command==0xA && note->param==0x0F);
+ ASSERT(song->currRow==7);
+ config.quantizeValue=4;
+ buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
+ ASSERT(song->patterns[song->currPattern][8*4].period==214 && song->currRow==7);
+ buttonEvent(PPT_BTN_L3,true);releaseButton(PPT_BTN_L3);
+ ASSERT(!editor.songPlaying);config.quantizeValue=0;
+}
+''')
+ p=src/'ppt_input.c';p.write_text('#include "pt2_config.h"\n#include "pt2_paula.h"\n'+p.read_text())
+ p=src/'pt2_mouse.c';p.write_text(p.read_text()+'''
+int pptQaHit(int x,int y){mouse.x=x;mouse.y=y;return checkGUIButtons();}
+''')
  p=src/'pt2_diskop.c';s=p.read_text()+'''
 void pptQaDisk(void){
  diskop.cached=true;diskop.numEntries=1;diskop.scrollOffset=0;diskop.mode=DISKOP_MODE_SMP;
@@ -41,6 +66,18 @@ void pptQaDisk(void){
 }
 ''';p.write_text(s)
  # Preserve native globals / helper functions defined by pt2_main.c.
+ p=src/'pt2_diskop.c';p.write_text(p.read_text()+'''
+void pptQaMany(void){
+ freeDiskOpEntryMem();diskop.cached=true;diskop.isFilling=false;
+ diskop.numEntries=70;diskop.scrollOffset=0;diskop.mode=DISKOP_MODE_MOD;
+ diskOpEntry=calloc(70,sizeof(fileEntry_t));
+ for(int i=0;i<70;i++){
+  char name[32];snprintf(name,sizeof(name),"JUNGLE_%02d.MOD",i);
+  diskOpEntry[i].nameU=strdup(name);strcpy(diskOpEntry[i].dateChanged,"271026");
+  diskOpEntry[i].filesize=4096+i*1024;
+ }
+}
+''')
  p=src/'pt2_main.c';s=p.read_text().replace('int main(int argc, char *argv[])','int pptUnusedMain(int argc, char *argv[])',1)
  s+='''
 #include <assert.h>
@@ -52,6 +89,9 @@ unsigned int pptQaChoice;
 int pptQaSwitchSlot;
 void pptQaSlot(void);
 void pptQaDisk(void);
+void pptQaRecord(void);
+void pptQaMany(void);
+int pptQaHit(int,int);
 void pptQaSnapshot(const char *name){
  FILE *f=fopen(name,"wb");assert(f);fprintf(f,"P6\\n320 255\\n255\\n");
  for(int i=0;i<320*255;i++){uint32_t c=video.frameBuffer[i];fputc(c>>16,f);fputc(c>>8,f);fputc(c,f);}fclose(f);
@@ -59,12 +99,12 @@ void pptQaSnapshot(const char *name){
 int main(void){
  assert(SDL_Init(SDL_INIT_TIMER)==0);
  video.frameBuffer=calloc(320*255,sizeof(uint32_t));assert(video.frameBuffer);
- video.palette[PAL_BACKGRD]=0x660000;video.palette[PAL_GENBKG]=0;
+ video.palette[PAL_BACKGRD]=0x660000;video.palette[PAL_GENBKG]=0;video.palette[PAL_QADSCP]=0xffffff;
  video.palette[PAL_GENTXT]=0xff0000;video.palette[PAL_PATTXT]=0;
  video.palette[PAL_BORDER]=0xaa0000;video.palette[PAL_GENBKG2]=0x440000;
  video.palette[PAL_COLORKEY]=0x12345678;assert(unpackBMPs());
  setupSprites();config.maxSampleLength=131070;song=createEmptyMod();assert(song);
- assert(allocSamplerVars());audio.outputRate=48000;
+ assert(allocSamplerVars());assert(allocDiskOpVars());strcpy(editor.currPath,"MODS/");audio.outputRate=48000;
  editor.currSample=0;editor.sampleZero=false;ui.diskOpScreenShown=true;pptQaDisk();
  moduleSample_t *s=&song->samples[0];s->length=32;strcpy(s->text,"ORIGINAL");
  memset(song->sampleData,0x44,32);song->patterns[0][0].period=428;
@@ -114,6 +154,20 @@ int main(void){
  assert(ppt_browser_import("tone.wav","tone.wav"));
  assert(editor.currSample==1 && song->samples[1].length==20864 && s->length==originalLength);
  assert(editor.songPlaying);pptQaSwitchSlot=0;editor.songPlaying=false;
+ pptQaRecord();
+ ui.diskOpScreenShown=true;ui.askBoxShown=false;ui.editTextFlag=false;pptQaMany();
+ assert(ppt_disk_visible_lines()==32);
+ for(int i=0;i<40;i++)ppt_disk_move(1);
+ assert(diskop.scrollOffset==9 && ppt_disk_selected_row()==31);
+ assert(pptQaHit(100,221)==PTB_DO_FILEAREA);
+ assert(pptQaHit(250,5)==PTB_DO_SAVEMODULE);
+ assert(pptQaHit(315,100)==PTB_DO_EXIT);
+ assert(pptQaHit(315,213)==PTB_DO_SCROLLDOWN);
+ assert(pptQaHit(315,225)==PTB_DO_SCROLLBOT);
+ assert(pptQaHit(100,235)==PTB_SONGNAME);
+ renderDiskOpScreen();updateDiskOp();
+ ppt_views_begin();pptQaSnapshot("full_mod_list.ppm");ppt_views_end();
+ diskop.mode=DISKOP_MODE_SMP;assert(ppt_disk_visible_lines()==10);
  ppt_browser_close();SDL_Quit();
  puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
  return 0;
@@ -160,4 +214,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm']:shutil.copy2(t/name,dest/name)

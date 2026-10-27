@@ -47,3 +47,9 @@ void updatePatternData(void)
 			redrawPattern();
     }
 }
+
+void trackerFlags(void){
+		charOutBg(16, 102, ' ', video.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);
+		charOut(16, 102, 'M', video.palette[PAL_GENTXT]);
+		charOutBg(24, 102, '0' + editor.editMoveAdd, video.palette[PAL_GENTXT], video.palette[PAL_GENBKG]);
+}

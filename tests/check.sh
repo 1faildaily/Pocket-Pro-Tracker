@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as tmp:
  (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_posed.c').write_text((root/'tests/fixtures/pt2_position_editor_sample.c').read_text())
  (p/'src/pt2_visuals.c').write_text((root/'tests/fixtures/pt2_visuals_vu_sample.c').read_text())
- (p/'src/pt2_diskop.c').write_text('#include "pt2_diskop.h"\nstatic fileEntry_t *diskOpEntry;\nvoid renderDiskOpScreen(void)\n{\n}\n\t\t\t\tloadSample(filePath, diskOpGetAnsiEntry(fileEntryRow));\nvoid freeDiskOpEntryMem(void)\n{\n}\n')
+ (p/'src/pt2_diskop.c').write_text('#include "pt2_diskop.h"\nstatic fileEntry_t *diskOpEntry;\nvoid diskOpRenderFileList(void){for (int32_t i = 0; i < DISKOP_LINES; i++){}}\nvoid renderDiskOpScreen(void)\n{\n}\n\t\t\t\tloadSample(filePath, diskOpGetAnsiEntry(fileEntryRow));\nvoid freeDiskOpEntryMem(void)\n{\n}\n')
  (p/'src/pt2_audio.c').write_text('void f(){\n\taudio.callbackOngoing = false;\n\n\t(void)userdata;\n}\n')
  (p/'src/pt2_askbox.h').write_text('enum {\n\tASKBOX_NUM,\n};\n')
  (p/'src/pt2_sampler.c').write_text('void samplerLoopToggle(void)\n{\n\tif (s->loopStart+s->loopLength > 2) {}\n\telse\n\t{\n\t\tif (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}\n\t}\n}\n')

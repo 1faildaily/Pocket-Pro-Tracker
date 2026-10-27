@@ -29,3 +29,5 @@ void ppt_views_end(void);
 void ppt_disk_move(int direction);
 void ppt_disk_activate(void);
 int ppt_disk_selected_row(void);
+
+void ppt_disk_draw_full(void);

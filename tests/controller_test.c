@@ -17,6 +17,8 @@ static int textCommitted, textMovedRight, textMovedLeft;
 static int playCalls, playPatt, playPos, playRow, stopCalls;
 static int pointerModeCalls, statusCalls;
 static int previewCalls,previewPitch,previewSample;
+static int recordCalls;
+void pptRecordInsertedNote(int8_t p,int8_t sample){(void)p;(void)sample;assert(editor.currMode==MODE_RECORD && editor.songPlaying);recordCalls++;}
 static int sampleUIUpdates, patternUIUpdates, titleUpdates;
 void pptPreviewInsertedNote(int8_t pitch,int8_t sampleIndex){assert(!audio.locked);previewCalls++;previewPitch=pitch;previewSample=sampleIndex;}
 void modPlay(int16_t patt,int16_t pos,int8_t row){playCalls++;playPatt=patt;playPos=pos;playRow=row;editor.songPlaying=true;}
@@ -133,6 +135,23 @@ int main(void){
   assert(!ppt_full_pattern_active());song->currRow=0;cursor.pos=0;cursor.channel=0;
   viewRenders=samplerOpens=samplerExits=diskRenders=0;
   playCalls=stopCalls=pointerModeCalls=statusCalls=0;
+  /* EDITSKIP affects plain A, but never A+direction or A+B chords. */
+  editor.editMoveAdd=4;song->currRow=0;cursor.pos=0;
+  buttonEvent(PPT_BTN_A,true);assert(song->currRow==0);releaseButton(PPT_BTN_A);
+  assert(song->currRow==4 && patt[0].period!=0);
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);assert(song->currRow==8 && patt[16].period!=0);
+  buttonEvent(PPT_BTN_A,true);directionAction(3);releaseButton(PPT_BTN_A);assert(song->currRow==8);
+  buttonEvent(PPT_BTN_A,true);buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);releaseButton(PPT_BTN_A);
+  assert(song->currRow==8);
+  editor.editMoveAdd=16;song->currRow=60;
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);assert(song->currRow==12);
+  buttonEvent(PPT_BTN_L3,true);releaseButton(PPT_BTN_L3);
+  assert(editor.currMode==MODE_RECORD && editor.songPlaying && playRow==DONT_SET_ROW);
+  int recordRow=song->currRow;
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);assert(recordCalls==1 && song->currRow==recordRow);
+  buttonEvent(PPT_BTN_L3,true);releaseButton(PPT_BTN_L3);assert(!editor.songPlaying);
+  editor.editMoveAdd=0;song->currRow=0;cursor.pos=0;
+  memset(patt,0,sizeof(patt));previewCalls=recordCalls=0;lastPitch=24;
   /* v0.3.24: note erase includes sample, FX preserved; rectangle is exact. */
   patt[0]=(note_t){.period=428,.sample=17,.command=0xA,.param=0xBC};
   erase();assert(patt[0].period==0 && patt[0].sample==0);
@@ -175,8 +194,8 @@ int main(void){
   state.currRow=63;directionAction(1);assert(state.currRow==2);
   state.currRow=1;directionAction(0);assert(state.currRow==62);
   for(int i=0;i<20;i++)directionAction(3);
-  assert(editor.editMoveAdd==9);
-  directionAction(3);assert(editor.editMoveAdd==9);
+  assert(editor.editMoveAdd==16);
+  directionAction(3);assert(editor.editMoveAdd==16);
   for(int i=0;i<20;i++)directionAction(2);
   assert(editor.editMoveAdd==0);
   state.currRow=5;directionAction(1);assert(state.currRow==6);
@@ -231,6 +250,7 @@ int main(void){
   assert(ppt_live_edit_active());
   editor.songPlaying=false;atomic_store(&liveEditEnabled,false);
   state.currRow=0;
+  editor.editMoveAdd=0; /* Remaining legacy tests intentionally edit in-place. */
   /* Reset test-only redraw counters after exercising view precedence. */
   samplerRangeRenders=0;samplerPosUpdates=0;
   /* v0.3.16 sampler key combinations do not paste/delete pattern cells. */
