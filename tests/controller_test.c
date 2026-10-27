@@ -79,26 +79,36 @@ int main(void){
   state.patterns[0]=patt;
   cursor.pos=0;
   editor.currSample=0;
-  /* MENU tap toggles fullscreen; transport / direction chords never toggle. */
+  assert(buttonFromRaw(BTN_THUMBR)==PPT_BTN_R3);
+  assert(buttonFromRaw(BTN_MODE)==PPT_BTN_R3);
+  assert(buttonFromRaw(312)==PPT_BTN_MENU);
+  assert(buttonFromRaw(KEY_MENU)==PPT_BTN_MENU);
+  /* R3 toggles; MENU never switches. A activates disk entry; X is a mouse click. */
   ui.diskOpScreenShown=true;
   buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
-  assert(ppt_full_pattern_active() && !ui.diskOpScreenShown);
-  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  assert(!ppt_full_pattern_active() && ui.diskOpScreenShown);
+  buttonEvent(PPT_BTN_R3,true);assert(ppt_full_pattern_active());
+  buttonEvent(PPT_BTN_R3,true);assert(ppt_full_pattern_active()); /* key repeat */
+  releaseButton(PPT_BTN_R3);
+  buttonEvent(PPT_BTN_R3,true);releaseButton(PPT_BTN_R3);
   assert(!ppt_full_pattern_active() && ui.diskOpScreenShown);
   int eventCount=eventsPushed;
   directionAction(1);assert(diskMoves==1);
-  buttonEvent(PPT_BTN_X,true);releaseButton(PPT_BTN_X);
+  buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
   assert(diskActivations==1 && eventsPushed==eventCount);
+  video.window=(SDL_Window*)1;
+  buttonEvent(PPT_BTN_X,true);assert(mouseDownForwarded[PPT_BTN_X]);
+  releaseButton(PPT_BTN_X);assert(eventsPushed==eventCount+2);
   ui.diskOpScreenShown=false;
   buttonEvent(PPT_BTN_MENU,true);directionAction(3);releaseButton(PPT_BTN_MENU);
   assert(!ppt_full_pattern_active());
   buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_START,true);
   releaseButton(PPT_BTN_START);releaseButton(PPT_BTN_MENU);
   assert(!ppt_full_pattern_active());editor.songPlaying=false;
-  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  buttonEvent(PPT_BTN_R3,true);releaseButton(PPT_BTN_R3);
   assert(ppt_full_pattern_active());
-  mouse.x=64;mouse.y=35;fullPatternClick();assert(song->currRow==3 && cursor.pos==2);
-  buttonEvent(PPT_BTN_MENU,true);releaseButton(PPT_BTN_MENU);
+  mouse.x=64;mouse.y=40;fullPatternClick();assert(song->currRow==3 && cursor.pos==2);
+  buttonEvent(PPT_BTN_R3,true);releaseButton(PPT_BTN_R3);
   assert(!ppt_full_pattern_active());song->currRow=0;cursor.pos=0;cursor.channel=0;
   viewRenders=samplerOpens=samplerExits=diskRenders=0;
   playCalls=stopCalls=pointerModeCalls=statusCalls=0;

@@ -1,4 +1,5 @@
-/* Transient presentation only. Native framebuffer is restored after upload. */
+/* Full view uses PT2's original frame slices, bitmap font and cursor assets.
+   Presentation only: framebuffer restored immediately after texture upload. */
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include "pt2_tables.h"
 #include "pt2_textout.h"
 #include "pt2_visuals.h"
+#include "pt2_bmp.h"
 #include "ppt_input.h"
 
 static uint32_t savedFrame[SCREEN_W * SCREEN_H];
@@ -26,62 +28,76 @@ static int noteIndex(uint16_t period)
     for(int i=0;i<36;i++)if(periodTable[i]==period)return i+2;
     return 1;
 }
+static void drawNativeCursor(int x,int y)
+{
+    /* Exact 11x14 frame from createBitmaps(), including transparent interior. */
+    for(int yy=0;yy<14;yy++)for(int xx=0;xx<11;xx++){
+        const uint32_t pixel=patternCursorBMP[yy*11+xx];
+        if(pixel!=video.palette[PAL_COLORKEY] && x+xx>=0 && x+xx<SCREEN_W && y+yy>=0 && y+yy<SCREEN_H)
+            video.frameBuffer[(y+yy)*SCREEN_W+x+xx]=pixel;
+    }
+}
+static void drawNativeMouse(void)
+{
+    /* Same paletted 16x16 pointer as PT2's SPRITE_MOUSE_POINTER. */
+    for(int yy=0;yy<16;yy++)for(int xx=0;xx<16;xx++){
+        int x=mouse.x+xx,y=mouse.y+yy;
+        const uint8_t index=mousePointerBMP[yy*16+xx];
+        if(index!=PAL_COLORKEY && index<PALETTE_NUM && x>=0 && x<SCREEN_W && y>=0 && y<SCREEN_H)
+            video.frameBuffer[y*SCREEN_W+x]=video.palette[index];
+    }
+}
 static void fullscreenPattern(void)
 {
-    const uint32_t bg=video.palette[PAL_BACKGRD];
-    const uint32_t fg=video.palette[PAL_PATTXT];
-    const uint32_t bar=video.palette[PAL_GENBKG];
-    const uint32_t text=video.palette[PAL_GENTXT];
-    const char **names=(const char **)(config.accidental?noteNames2:noteNames1);
+    const uint32_t bg=video.palette[PAL_BACKGRD],fg=video.palette[PAL_PATTXT];
+    const uint32_t bar=video.palette[PAL_GENBKG],text=video.palette[PAL_GENTXT];
+    const char **names=(const char **)(config.pattDots?
+        (config.accidental?noteNames4:noteNames3):(config.accidental?noteNames2:noteNames1));
     const note_t *pattern=song->patterns[song->currPattern];
-    if(!pattern)return;
+    if(!pattern || !trackerFrameBMP)return;
     fillRect(0,0,SCREEN_W,SCREEN_H,bg);
-    fillRect(0,0,SCREEN_W,11,bar);
+    drawFramework1(0,0,SCREEN_W,11);
     textOut(3,2,"POS",text);printThreeDecimals(27,2,song->currPos,text);
     textOut(64,2,"PAT",text);printTwoDecimals(88,2,song->currPattern,text);
     textOut(120,2,"LEN",text);printThreeDecimals(144,2,song->header.songLength,text);
     textOut(184,2,"SMP",text);printTwoHex(208,2,editor.currSample+1,text);
     textOut(240,2,ppt_live_edit_active()?"LIVE":"EDIT",text);
     const int first=firstVisibleRow(),ghost=ppt_ghost_row(song->currPattern);
+    int y=12,currentY=12;
     for(int i=0;i<32;i++){
-        const int row=first+i,y=14+i*7;
+        const int row=first+i;
         const bool current=row==song->currRow;
+        const int height=current?14:7,ty=y+(current?2:0);
+        /* Native bevels and the active row's horizontal/vertical junctions. */
+        blit32(0,y,SCREEN_W,height,&trackerFrameBMP[(current?188:140)*SCREEN_W]);
+        if(current)currentY=y;
         const uint32_t rowBg=current?bar:(row==ghost?0x00333333:bg);
         const uint32_t rowFg=current?text:fg;
-        fillRect(1,y,318,6,rowBg);
-        printTwoDecimalsBg(8,y,row,rowFg,rowBg);
+        if(current)printTwoDecimalsBigBg(8,ty,row,rowFg,rowBg);
+        else printTwoDecimalsBg(8,ty,row,rowFg,rowBg);
         for(int channel=0;channel<4;channel++){
             const note_t *n=&pattern[row*4+channel];
             const int x=32+channel*72;
-            const int index=noteIndex(n->period);
             uint32_t fieldBg=ppt_selection_contains(song->currPattern,row,channel,0)?0x00555555:rowBg;
-            textOutBg(x,y,names[index],rowFg,fieldBg);
+            if(current)textOutBigBg(x,ty,names[noteIndex(n->period)],rowFg,fieldBg);
+            else textOutBg(x,ty,names[noteIndex(n->period)],rowFg,fieldBg);
             const uint8_t digits[5]={n->sample>>4,n->sample&15,n->command&15,n->param>>4,n->param&15};
             for(int j=0;j<5;j++){
                 fieldBg=ppt_selection_contains(song->currPattern,row,channel,j+1)?0x00555555:rowBg;
                 char ch=hexTable[digits[j]];
                 if(j==0 && !digits[j] && config.blankZeroFlag)ch=' ';
                 if(config.pattDots && ((j<2 && !n->sample) || (j>=2 && !n->command && !n->param)))ch=2;
-                charOutBg(x+24+j*8,y,ch,rowFg,fieldBg);
+                if(current)charOutBigBg(x+24+j*8,ty,ch,rowFg,fieldBg);
+                else charOutBg(x+24+j*8,ty,ch,rowFg,fieldBg);
             }
         }
+        y+=height;
     }
-    for(int channel=0;channel<5;channel++){
-        int x=channel==0?27:27+channel*72;
-        fillRect(x,12,1,228,bar);
-    }
-    /* Underline the active field without covering its note/effect text. */
     const int field=cursor.pos%6;
-    const int x=32+(cursor.pos/6)*72+(field==0?0:(field+2)*8);
-    fillRect(x,14+((int)song->currRow-first)*7+5,field==0?23:7,1,video.palette[PAL_PATCURSOR]);
-    fillRect(0,244,SCREEN_W,11,bar);
-    textOut(3,247,"STATUS:",text);
-    textOutN(64,247,ui.statusMessage,17,text);
-    /* Native pointer sprites belong to the normal UI, so draw our own cross. */
-    if(mouse.x>=1 && mouse.x<SCREEN_W-2 && mouse.y>=1 && mouse.y<SCREEN_H-2){
-        fillRect(mouse.x-1,mouse.y,3,1,text);
-        fillRect(mouse.x,mouse.y-1,1,3,text);
-    }
+    drawNativeCursor(30+(cursor.pos/6)*72+(field==0?0:(field+2)*8),currentY);
+    drawFramework1(0,244,SCREEN_W,11);
+    textOut(3,247,"STATUS:",text);textOutN(64,247,ui.statusMessage,17,text);
+    drawNativeMouse();
 }
 void ppt_views_begin(void)
 {
@@ -91,14 +107,14 @@ void ppt_views_begin(void)
     if(!full && row<0)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
-    /* Recolor only background pixels, preserving native filename/date text. */
+    /* Solid soft bar only: no contrasting one-pixel underline. */
     const int y=35+row*6;
     const uint32_t bg=video.palette[PAL_BACKGRD];
-    for(int yy=y;yy<y+5;yy++)for(int xx=8;xx<303;xx++){
-        uint32_t *p=&video.frameBuffer[yy*SCREEN_W+xx];
-        if((*p&0xFFFFFF)==(bg&0xFFFFFF))*p=0x00333333;
+    for(int yy=y;yy<y+6;yy++)for(int xx=8;xx<303;xx++){
+        uint32_t *pixel=&video.frameBuffer[yy*SCREEN_W+xx];
+        if((*pixel&0xFFFFFF)==(bg&0xFFFFFF))*pixel=0x00333333;
     }
-    fillRect(8,y+5,295,1,video.palette[PAL_GENTXT]);
+    drawNativeMouse();
 }
 void ppt_views_end(void)
 {
