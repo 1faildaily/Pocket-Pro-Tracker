@@ -34,3 +34,9 @@ int ppt_disk_selected_row(void);
 void ppt_disk_draw_full(void);
 
 void ppt_mod_restore_dialog(const uint32_t *frame);
+
+void ppt_position_draw_full(void);
+int ppt_position_cursor(void);
+void ppt_position_set_cursor(int pos);
+
+int ppt_position_first(void);

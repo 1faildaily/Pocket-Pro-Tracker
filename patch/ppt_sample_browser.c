@@ -29,6 +29,15 @@ static float *pcm;
 static int frames,sourceHz;
 static double previewPos;
 static bool previewPlaying,importDialog;
+static module_t *noteOwner;
+static int8_t importedNotes[MOD_SAMPLES];
+static void checkNoteOwner(void){
+    if(noteOwner!=song){noteOwner=song;memset(importedNotes,-1,sizeof(importedNotes));}
+}
+int ppt_browser_sample_note(void){
+    checkNoteOwner();
+    return editor.currSample>=0 && editor.currSample<MOD_SAMPLES?importedNotes[editor.currSample]:-1;
+}
 static int importParts=1;
 static int importPitch=28; /* E-3: default on EVERY import */
 static char cachedPath[PATH_MAX+1],cachedName[PATH_MAX+1];
@@ -224,6 +233,7 @@ bool ppt_browser_import(const char *path,const char *name){
         loopA=(int)llround(sourceLoopStart*target/sourceHz)&~1;
         loopB=(int)llround(sourceLoopEnd*target/sourceHz)&~1;
     }
+    checkNoteOwner();
     /* All buffers and slots validated before any existing sample is changed. */
     lockAudio();turnOffVoices();
     for(int part=0;part<parts;part++){
@@ -231,6 +241,7 @@ bool ppt_browser_import(const char *path,const char *name){
         const int begin=part*chunk;
         memcpy(&song->sampleData[s->offset],converted+begin,chunk);
         memset(&song->sampleData[s->offset+chunk],0,config.maxSampleLength-chunk);
+        importedNotes[slots[part]]=(int8_t)pitch;
         s->length=chunk;s->fineTune=0;s->volume=64;s->loopStart=0;s->loopLength=2;
         /* MOD cannot represent a loop spanning two different sample slots. */
         if(loopA>=begin && loopB<=begin+chunk && loopB<=kept && loopB-loopA>=2){

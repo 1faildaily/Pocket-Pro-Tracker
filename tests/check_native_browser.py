@@ -177,9 +177,11 @@ int main(void){
  free(sound);
  pptQaChoice=24;assert(ppt_browser_import("tone.wav","tone.wav"));
  assert(s->length==16574 && editor.currPlayNote==24 && song->modified);
+ assert(ppt_browser_sample_note()==24);
  assert(song->patterns[0][0].period==428 && song->samples[1].length==0);
  pptQaChoice=35;assert(ppt_browser_import("tone.wav","tone.wav"));
  assert(s->length==31388 && editor.currPlayNote==35);
+ assert(ppt_browser_sample_note()==35);
  int8_t *saved=malloc(s->length);int savedLength=s->length;assert(saved);
  memcpy(saved,song->sampleData,savedLength);
  for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=2;
@@ -208,6 +210,7 @@ int main(void){
  pptQaSwitchSlot=1;pptQaChoice=28;
  assert(ppt_browser_import("tone.wav","tone.wav"));
  assert(editor.currSample==1 && song->samples[1].length==20864 && s->length==originalLength);
+ assert(ppt_browser_sample_note()==28);editor.currSample=0;assert(ppt_browser_sample_note()==35);editor.currSample=1;
  assert(editor.songPlaying);pptQaSwitchSlot=0;editor.songPlaying=false;
  pptQaRecord();
  ui.diskOpScreenShown=true;ui.askBoxShown=false;ui.editTextFlag=false;pptQaMany();
@@ -273,6 +276,7 @@ int main(void){
  ppt_views_begin();pptQaSnapshot("bpm_editor.ppm");ppt_views_end();
  mouse.x=200;mouse.y=93;mouseButtonDownHandler(SDL_BUTTON_LEFT);mouseButtonUpHandler(SDL_BUTTON_LEFT);
  assert(s->length==9882 && s->loopStart==988 && s->loopLength==1976);
+ ppt_bpm_begin(false);assert(textEdit.tmpDisp16==168);leaveTextEditMode(EDIT_TEXT_NO_UPDATE);
  assert(s->fineTune==3 && s->volume==47 && !strcmp(s->text,"BPM TEST"));
  assert(song->patterns[0][0].period==noteBefore && song->modified);
  for(int i=0;i<64;i++)assert(song->sampleData[neighbor+i]==0x55);
@@ -304,6 +308,9 @@ int main(void){
  }
 
  {
+ ui.posEdScreenShown=true;ui.samplerScreenShown=false;ui.diskOpScreenShown=false;ui.editOpScreenShown=false;
+ song->header.songLength=70;ppt_position_set_cursor(70);
+ ppt_views_begin();pptQaSnapshot("full_position.ppm");ppt_views_end();
  int8_t traceData[512];for(int i=0;i<512;i++)traceData[i]=(int8_t)lrint(110*sin(i*0.31));
  for(int ch=0;ch<4;ch++){
   scope[ch].active=true;scope[ch].volume=64;scope[ch].data=traceData;scope[ch].newData=traceData;
@@ -319,7 +326,7 @@ int main(void){
  for(int y=0;y<255;y++)for(int x=0;x<320;x++){
   int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
   assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0x606060);
-  int ch=(x-32)/72;assert(x>=32 && ch<4 && x<32+ch*72+64 && y>=12 && y<244);counts[ch]++;
+  int ch=(x-32)/72;assert(x>=44+ch*72 && ch<4 && x<44+ch*72+40 && y>=111 && y<144);counts[ch]++;
  }
  assert(counts[0]>20 && counts[1]==0 && counts[2]>20 && counts[3]>20);
  pptQaSnapshot("full_pattern_scopes.ppm");ppt_views_end();
@@ -374,4 +381,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm','full_position.ppm']:shutil.copy2(t/name,dest/name)

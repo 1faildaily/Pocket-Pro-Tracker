@@ -74,7 +74,6 @@ bool ppt_bpm_apply(void){
  memset(&song->sampleData[s->offset+n],0,config.maxSampleLength-n);
  s->length=n;s->loopStart=start;s->loopLength=end-start;
  fixSampleBeep(s);unlockAudio();free(dst);
- sourceBpm=targetBpm;
  editor.samplePos=0;updateCurrSample();ui.updateSongSize=true;
  updateWindowTitle(MOD_IS_MODIFIED);displayMsg("BPM CONVERTED");return true;
 }

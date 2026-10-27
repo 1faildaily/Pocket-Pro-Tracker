@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.37: use the native quantized RECORD path for handheld A.
+# PPT 0.3.38: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -707,4 +707,63 @@ if p.exists():
  s=p.read_text()
  if 'PTB_PPT_BPM_DO' not in s:
   s=s.replace('\tPTB_SA_FIL_HP_CUTOFF\n};','\tPTB_SA_FIL_HP_CUTOFF,\n\tPTB_PPT_BPM_DO\n};',1)
+  p.write_text(s)
+
+# PPT_POSITION_FULL: presentation below a compact header, native order data.
+p=root/'src'/'pt2_posed.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_POSITION_FULL' not in s:
+  s+=r'''
+/* PPT_POSITION_FULL */
+void ppt_position_draw_full(void){
+ int current=ppt_position_cursor(),first=ppt_position_first();
+ fillRect(0,0,320,255,video.palette[PAL_BACKGRD]);
+ drawFramework1(0,0,320,19);
+ textOut(8,3,"POSITION EDIT",video.palette[PAL_GENTXT]);
+ textOut(160,3,"LEN",video.palette[PAL_GENTXT]);printThreeDecimals(192,3,song->header.songLength,video.palette[PAL_GENTXT]);
+ drawButton1(272,1,47,11,"EXIT");
+ textOut(8,12,"POS  PAT  NAME",video.palette[PAL_GENTXT]);
+ for(int i=0;i<32;i++){
+  int pos=first+i,y=20+i*7;if(pos>song->header.songLength || pos>=128)break;
+  int style=ppt_loop_entry_style(pos);
+  uint32_t fg=video.palette[pos==current?PAL_GENTXT:PAL_QADSCP];
+  if(pos==current || style)fillRect(4,y,312,7,style?0x555555:0x333333);
+  printThreeDecimals(8,y,pos,fg);
+  if(pos==song->header.songLength){textOut(48,y,"+++ APPEND",fg);continue;}
+  int pat=song->header.patternTable[pos];printTwoDecimals(48,y,pat,fg);
+  if(pat>=0 && pat<MAX_PATTERNS)textOutN(88,y,posEdNames[pat],15,fg);
+ }
+ drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
+}
+'''
+  p.write_text(s)
+p=root/'src'/'pt2_mouse.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_POSITION_MOUSE' not in s:
+  a='static bool handleLeftMouseButton(void)\n{'
+  assert a in s
+  s=s.replace(a,a+r'''
+    /* PPT_POSITION_MOUSE: never click hidden native pattern controls. */
+    if(ui.posEdScreenShown && !ui.askBoxShown && !ui.editTextFlag && !ui.diskOpScreenShown && mouse.leftButtonPressed){
+        if(mouse.x>=272 && mouse.y<13){ui.posEdScreenShown=false;displayMainScreen();return true;}
+        if(mouse.y>=20 && mouse.y<244){int first=ppt_position_first();
+            int pos=first+(mouse.y-20)/7;if(pos<=song->header.songLength)ppt_position_set_cursor(pos);}
+        return true;
+    }
+''',1)
+  p.write_text(s)
+# Full POSITION overlay owns mouse/wheel; underlying pattern is not interactive.
+p=root/'src'/'pt2_mouse.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_POSITION_HIT_GUARD' not in s:
+  if '#include "ppt_input.h"' not in s:s='#include "ppt_input.h"\n'+s
+  a='static int32_t checkGUIButtons(void)\n{'
+  s=s.replace(a,a+'\n    /* PPT_POSITION_HIT_GUARD */\n    if(ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag)return PTB_DUMMY;',1)
+  for name,step in [('mouseWheelUpHandler',-1),('mouseWheelDownHandler',1)]:
+   a='void '+name+'(void)\n{'
+   assert a in s
+   s=s.replace(a,a+'\n    if(ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag){ppt_position_set_cursor(ppt_position_cursor()+('+str(step)+'));return;}',1)
   p.write_text(s)

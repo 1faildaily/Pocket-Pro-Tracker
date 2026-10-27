@@ -912,6 +912,13 @@ int main(void){
   editor.songPlaying=false;song->header.songLength=127;pastePositionRange();
   assert(song->header.songLength==127);
   song->header.songLength=7;
+  song->currPos=6;posAppend=false;directionAction(1);
+  assert(ppt_position_cursor()==7 && song->currPos==6);
+  pastePositionRange();assert(editor.currPosEdPattDisp==&song->header.patternTable[7]);assert(song->header.songLength==9 && song->header.patternTable[7]==11 && song->header.patternTable[8]==12);
+  directionAction(3);assert(song->header.patternTable[7]==12);
+  directionAction(2);assert(song->header.patternTable[7]==11);
+  ppt_position_set_cursor(9);directionAction(3);
+  assert(song->header.songLength==10 && song->header.patternTable[9]==1);
   puts("POSITION clipboard: selected range, loop-clear retention, shifted insertion, playback/full guards OK");
   return 0;
 }

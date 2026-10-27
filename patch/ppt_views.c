@@ -62,7 +62,7 @@ static void capturePatternScopes(void)
         if(!scope[ch].active || !scope[ch].volume || editor.muted[ch])continue;
         for(int y=0;y<SCOPE_HEIGHT;y++){
             if((video.frameBuffer[(55+y)*SCREEN_W+128+ch*(SCOPE_WIDTH+8)+x]&0xFFFFFF)==(video.palette[PAL_QADSCP]&0xFFFFFF)){
-                scopeTrace[ch][x]=32+y*6;break;
+                scopeTrace[ch][x]=111+y;break;
             }
         }
     }
@@ -77,8 +77,8 @@ static void drawPatternScopes(uint32_t bg)
 {
     for(int ch=0;ch<4;ch++)for(int i=1;i<SCOPE_WIDTH;i++){
         if(scopeTrace[ch][i-1]<0 || scopeTrace[ch][i]<0)continue;
-        int x=32+ch*72+(i-1)*63/(SCOPE_WIDTH-1),y=scopeTrace[ch][i-1];
-        const int endX=32+ch*72+i*63/(SCOPE_WIDTH-1),endY=scopeTrace[ch][i];
+        int x=32+ch*72+12+(i-1),y=scopeTrace[ch][i-1];
+        const int endX=32+ch*72+12+i,endY=scopeTrace[ch][i];
         int dx=endX-x,dy=abs(endY-y),sy=y<endY?1:-1,error=dx-dy;
         for(;;){
             scopeBackgroundPixel(x,y,bg);
@@ -148,10 +148,13 @@ void ppt_views_begin(void)
     const bool modList=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD ;
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
     const bool bpm=ui.editOpScreenShown && ui.editOpScreen==2 && !ui.askBoxShown && !ui.diskOpScreenShown && !ui.posEdScreenShown;
+    const bool position=ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag;
+    const bool samplerNote=ui.samplerScreenShown && !ui.askBoxShown && !ui.changingSmpResample;
     const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP;
-    if(!full && row<0 && !sample && !modList && !bpm)return;
+    if(!full && row<0 && !sample && !modList && !bpm && !position && !samplerNote)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
+    if(position){ppt_position_draw_full();drawNativeMouse();return;}
     if(modList){
         ppt_disk_draw_full();
         if(ui.editTextFlag && textEdit.object==PTB_SONGNAME)
@@ -167,6 +170,10 @@ void ppt_views_begin(void)
         }else ppt_browser_draw();
     }
     if(bpm)ppt_bpm_draw();
+    if(samplerNote){
+        int pitch=ppt_browser_sample_note();
+        textOutBg(288,236,pitch<0?"---":(config.accidental?noteNames2:noteNames1)[pitch+2],video.palette[PAL_GENTXT],video.palette[PAL_GENBKG]);
+    }
     if(row<0){drawNativeMouse();return;}
     const int y=35+row*6;
     const uint32_t bg=video.palette[PAL_BACKGRD];

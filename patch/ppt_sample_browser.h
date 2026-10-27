@@ -20,3 +20,5 @@ void ppt_browser_draw_import_dialog(void); /* native modal, redrawn over preview
 
 int ppt_browser_import_parts(void);
 void ppt_browser_adjust_parts(int direction);
+
+int ppt_browser_sample_note(void);
