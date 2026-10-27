@@ -1,4 +1,10 @@
-# Pocket Pro Tracker v0.3.43 — trwałe nazwy patternów obok MOD-a
+# Pocket Pro Tracker v0.3.45 — napisy interfejsu
+
+Pod QUADRASCOPE: POCKET PRO TRACKER. Nagłówek POSITION-ED: POSITION / EDIT. Nagłówek DISK-OP: DISK / OPERATOR. Natywna czcionka i obramowania, bez zmian playera i formatu MOD.
+
+
+Usunięto wyciek pikseli QUADRASCOPE przy EXIT w POSITION-ED. Przechwycenie waveformów przywraca teraz cały interfejs przed narysowaniem widoku. Poprawka wyłącznie graficzna; player i format MOD bez zmian.
+
 
 SAVE MODULE po udanym natywnym zapisie tworzy dodatkowy plik tekstowy w tym samym katalogu. Do pełnej nazwy modułu dopisywane jest .patterns.txt:
 

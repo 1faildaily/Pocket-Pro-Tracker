@@ -199,6 +199,12 @@ int main(void){
  video.palette[PAL_GENTXT]=0xff0000;video.palette[PAL_PATTXT]=0xffffff;
  video.palette[PAL_BORDER]=0xaa0000;video.palette[PAL_GENBKG2]=0x440000;
  video.palette[PAL_COLORKEY]=0x12345678;assert(unpackBMPs());
+ memcpy(video.frameBuffer,trackerFrameBMP,320*255*4);pptQaSnapshot("branding_main.ppm");
+ memset(video.frameBuffer,0,320*255*4);
+ for(int y=0;y<99;y++)memcpy(video.frameBuffer+y*320+120,posEdBMP+y*200,200*4);
+ pptQaSnapshot("branding_position.ppm");
+ memcpy(video.frameBuffer,diskOpScreenBMP,320*99*4);pptQaSnapshot("branding_disk.ppm");
+ memset(video.frameBuffer,0,320*255*4);
  setupSprites();config.maxSampleLength=131070;song=createEmptyMod();assert(song);
  assert(allocSamplerVars());assert(allocDiskOpVars());strcpy(editor.currPath,"MODS/");audio.outputRate=48000;
  editor.currSample=0;editor.sampleZero=false;ui.diskOpScreenShown=true;pptQaDisk();
@@ -396,6 +402,9 @@ int main(void){
   for(int ch=0;ch<4;ch++)if(video.frameBuffer[at]==colors[ch])colorCounts[ch]++;
  }
  for(int ch=0;ch<4;ch++)assert(colorCounts[ch]>10);
+ /* Native capture must not paint any part of the EXIT side strip. */
+ for(int y=55;y<88;y++)for(int x=308;x<320;x++)
+  assert(video.frameBuffer[y*320+x]==base[y*320+x]);
  pptQaSnapshot("position_scopes.ppm");ppt_views_end();
  assert(!memcmp(base,video.frameBuffer,320*255*4) && !memcmp(unchanged,scope,sizeof(unchanged)));
  memset(scope,0,sizeof(unchanged));memset(editor.muted,0,sizeof(editor.muted));
@@ -484,4 +493,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm','full_position.ppm','position_scopes.ppm','pattern_name_edit.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['branding_main.ppm','branding_position.ppm','branding_disk.ppm','dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm','full_position.ppm','position_scopes.ppm','pattern_name_edit.ppm']:shutil.copy2(t/name,dest/name)

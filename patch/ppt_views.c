@@ -171,7 +171,13 @@ void ppt_views_begin(void)
     if(!full && row<0 && !sample && !modList && !bpm && !position && !samplerNote)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
-    if(position){capturePatternScopes();ppt_position_draw_full();drawPositionScopes();drawNativeMouse();return;}
+    if(position){
+        capturePatternScopes();
+        /* Native scope drawing also touches the EXIT strip. Keep only captured
+           trace data and restore every UI pixel before composing POSITION. */
+        memcpy(video.frameBuffer,savedFrame,sizeof(savedFrame));
+        ppt_position_draw_full();drawPositionScopes();drawNativeMouse();return;
+    }
     if(modList){
         ppt_disk_draw_full();
         if(ui.editTextFlag && textEdit.object==PTB_SONGNAME)

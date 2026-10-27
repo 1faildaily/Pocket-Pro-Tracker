@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.43: use the native quantized RECORD path for handheld A.
+# PPT 0.3.45: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -831,3 +831,17 @@ if p.exists():
   assert s.count(a)==1
   s=s.replace(a,a+'\n\t/* PPT_NAMES_FILTER */\n\tif(!f->isDir && entryName>=13 && !UNICHAR_STRNICMP(&f->nameU[entryName-13],".patterns.txt",13))return false;',1)
   p.write_text(s)
+
+# PPT static interface titles: repaint only label interiors after unpacking.
+p=root/'src'/'pt2_bmp.c'
+if p.exists():
+    shutil.copy2(pathlib.Path(__file__).with_name('ppt_branding.h'),root/'src'/'ppt_branding.h')
+    s=p.read_text()
+    if 'pptBranding();' not in s:
+        anchor='bool unpackBMPs(void)'
+        assert anchor in s
+        s=s.replace(anchor,'#include "ppt_branding.h"\n\n'+anchor,1)
+        anchor='\tcreateBitmaps();'
+        assert s.count(anchor)==1
+        s=s.replace(anchor,anchor+'\n\tpptBranding();',1)
+        p.write_text(s)
