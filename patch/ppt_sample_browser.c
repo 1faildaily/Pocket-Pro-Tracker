@@ -146,6 +146,23 @@ int ppt_browser_target_length(int pitch){
     if(!pcm || !sourceHz || pitch<0 || pitch>35)return 0;
     return ppt_resample_length(frames,sourceHz,PAULA_PAL_CLK/periodTable[pitch]);
 }
+/* Equal even-byte MOD chunks; only the final chunk may need zero padding. */
+static int splitPlan(int length,int *chunk){
+    if(length<2 || config.maxSampleLength<2)return 0;
+    for(int parts=1;parts<=4;parts*=2){
+        int size=(int)(((int64_t)length+parts*2-1)/(parts*2))*2;
+        if(size<=config.maxSampleLength){*chunk=size;return parts;}
+    }
+    return 0;
+}
+static bool splitSlots(int parts,int slots[4]){
+    slots[0]=editor.currSample;int found=1;
+    for(int step=1;step<MOD_SAMPLES && found<parts;step++){
+        int slot=(editor.currSample+step)%MOD_SAMPLES;
+        if(song->samples[slot].length==0)slots[found++]=slot;
+    }
+    return found==parts;
+}
 bool ppt_browser_import_dialog(void){return importDialog;}
 int ppt_browser_import_pitch(void){return importPitch;}
 void ppt_browser_adjust_pitch(int semitones){
@@ -162,7 +179,10 @@ void ppt_browser_draw_import_choice(void){
     snprintf(line,sizeof(line),"%.2f HZ  %d BYTES",PAULA_PAL_CLK/periodTable[importPitch],ppt_browser_target_length(importPitch));
     textOut2(20,166,line);
     textOut2(20,177,"UP/DOWN NOTE  LEFT/RIGHT OCT");
-    snprintf(line,sizeof(line),"MAX %d BYTES",config.maxSampleLength);
+    int chunk=0,slots[4];int parts=splitPlan(ppt_browser_target_length(importPitch),&chunk);
+    if(!parts)snprintf(line,sizeof(line),"TOO LARGE - MAX 4 SLOTS");
+    else if(!splitSlots(parts,slots))snprintf(line,sizeof(line),"NEED %d SLOTS - NOT ENOUGH FREE",parts);
+    else snprintf(line,sizeof(line),"%d X %d B / MAX %d",parts,chunk,config.maxSampleLength);
     textOut2(20,188,line);
     textOut2(20,202,"L2/R2 SLOT  A LOAD  B CANCEL");
 }
@@ -184,29 +204,44 @@ bool ppt_browser_import(const char *path,const char *name){
     importDialog=false;
     if(pitch>35)return true;
     const int length=ppt_browser_target_length((int)pitch);
-    if(length<2 || length>config.maxSampleLength){displayErrorMsg("SAMPLE TOO LONG !");return true;}
-    int8_t *converted=malloc((size_t)length);
+    int chunk=0,slots[4];const int parts=splitPlan(length,&chunk);
+    if(!parts){displayErrorMsg("SAMPLE TOO LONG !");return true;}
+    if(!splitSlots(parts,slots)){displayErrorMsg("NOT ENOUGH SLOTS");return true;}
+    int8_t *converted=calloc((size_t)chunk*parts,1);
     if(!converted){displayErrorMsg("OUT OF MEMORY !");return true;}
     const double target=PAULA_PAL_CLK/periodTable[pitch];
     ppt_resample_pcm(pcm,frames,sourceHz,target,converted,length);
-    moduleSample_t *s=&song->samples[editor.currSample];
-    lockAudio();turnOffVoices();
-    memcpy(&song->sampleData[s->offset],converted,length);
-    memset(&song->sampleData[s->offset+length],0,config.maxSampleLength-length);
-    s->length=length;s->fineTune=0;s->volume=64;s->loopStart=0;s->loopLength=2;
+    int loopA=-1,loopB=-1;
     if(sourceLoopStart>=0){
-        int a=(int)llround(sourceLoopStart*target/sourceHz)&~1;
-        int b=(int)llround(sourceLoopEnd*target/sourceHz)&~1;
-        if(a>=0 && b<=length && b-a>=2){s->loopStart=a;s->loopLength=b-a;}
+        loopA=(int)llround(sourceLoopStart*target/sourceHz)&~1;
+        loopB=(int)llround(sourceLoopEnd*target/sourceHz)&~1;
     }
-    memset(s->text,0,sizeof(s->text));
-    size_t n=strlen(cachedName);if(n>=4)n-=4;if(n>21)n=21;
-    memcpy(s->text,cachedName,n);
-    fixSampleBeep(s);unlockAudio();free(converted);
+    /* All buffers and slots validated before any existing sample is changed. */
+    lockAudio();turnOffVoices();
+    for(int part=0;part<parts;part++){
+        moduleSample_t *s=&song->samples[slots[part]];
+        const int begin=part*chunk;
+        memcpy(&song->sampleData[s->offset],converted+begin,chunk);
+        memset(&song->sampleData[s->offset+chunk],0,config.maxSampleLength-chunk);
+        s->length=chunk;s->fineTune=0;s->volume=64;s->loopStart=0;s->loopLength=2;
+        /* MOD cannot represent a loop spanning two different sample slots. */
+        if(loopA>=begin && loopB<=begin+chunk && loopB<=length && loopB-loopA>=2){
+            s->loopStart=loopA-begin;s->loopLength=loopB-loopA;
+        }
+        memset(s->text,0,sizeof(s->text));
+        size_t n=strlen(cachedName);if(n>=4)n-=4;
+        if(n>(parts>1?18:21))n=parts>1?18:21;
+        memcpy(s->text,cachedName,n);
+        if(parts>1)snprintf(s->text+n,sizeof(s->text)-n,"/%d",part+1);
+        fixSampleBeep(s);
+    }
+    unlockAudio();free(converted);
     editor.sampleZero=false;editor.samplePos=0;
-    fillSampleRedoBuffer(editor.currSample);updateCurrSample();
+    for(int part=0;part<parts;part++)fillSampleRedoBuffer(slots[part]);
+    updateCurrSample();
     ppt_set_import_note((int)pitch);updateWindowTitle(MOD_IS_MODIFIED);
-    char loaded[18];snprintf(loaded,sizeof(loaded),"LOADED FOR %s",noteNames1[2+pitch]);
+    char loaded[18];if(parts>1)snprintf(loaded,sizeof(loaded),"%s",parts==2?"LOADED 2 PARTS":"LOADED 4 PARTS");
+    else snprintf(loaded,sizeof(loaded),"LOADED FOR %s",noteNames1[2+pitch]);
     displayMsg(loaded);return true;
 }
 void ppt_browser_draw(void){

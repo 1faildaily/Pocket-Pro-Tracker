@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 #include "pt2_header.h"
 #include "pt2_structs.h"
 #include "pt2_palette.h"
@@ -12,6 +13,7 @@
 #include "pt2_textout.h"
 #include "pt2_visuals.h"
 #include "pt2_bmp.h"
+#include "pt2_scopes.h"
 #include "ppt_input.h"
 #include "ppt_sample_browser.h"
 
@@ -49,6 +51,42 @@ static void drawNativeMouse(void)
             video.frameBuffer[y*SCREEN_W+x]=video.palette[index];
     }
 }
+/* Reuse the native QUADRASCOPE renderer and its existing synchronization.
+   Capture only rendered points; never read PCM pointers or change scope state. */
+static int scopeTrace[4][SCOPE_WIDTH];
+static void capturePatternScopes(void)
+{
+    drawScopes();
+    for(int ch=0;ch<4;ch++)for(int x=0;x<SCOPE_WIDTH;x++){
+        scopeTrace[ch][x]=-1;
+        if(!scope[ch].active || !scope[ch].volume || editor.muted[ch])continue;
+        for(int y=0;y<SCOPE_HEIGHT;y++){
+            if(video.frameBuffer[(55+y)*SCREEN_W+128+ch*(SCOPE_WIDTH+8)+x]==video.palette[PAL_QADSCP]){
+                scopeTrace[ch][x]=32+y*6;break;
+            }
+        }
+    }
+}
+static void scopeBackgroundPixel(int x,int y,uint32_t bg)
+{
+    /* Text, selection, bevels and playback bar always keep their own pixels. */
+    if(y>=12 && y<244 && video.frameBuffer[y*SCREEN_W+x]==bg)
+        video.frameBuffer[y*SCREEN_W+x]=0x001C1C1C;
+}
+static void drawPatternScopes(uint32_t bg)
+{
+    for(int ch=0;ch<4;ch++)for(int i=1;i<SCOPE_WIDTH;i++){
+        if(scopeTrace[ch][i-1]<0 || scopeTrace[ch][i]<0)continue;
+        int x=32+ch*72+(i-1)*63/(SCOPE_WIDTH-1),y=scopeTrace[ch][i-1];
+        const int endX=32+ch*72+i*63/(SCOPE_WIDTH-1),endY=scopeTrace[ch][i];
+        int dx=endX-x,dy=abs(endY-y),sy=y<endY?1:-1,error=dx-dy;
+        for(;;){
+            scopeBackgroundPixel(x,y,bg);
+            if(x==endX && y==endY)break;
+            int e2=error*2;if(e2>-dy){error-=dy;x++;}if(e2<dx){error+=dx;y+=sy;}
+        }
+    }
+}
 static void fullscreenPattern(void)
 {
     const uint32_t bg=video.palette[PAL_BACKGRD],fg=video.palette[PAL_PATTXT];
@@ -57,6 +95,7 @@ static void fullscreenPattern(void)
         (config.accidental?noteNames4:noteNames3):(config.accidental?noteNames2:noteNames1));
     const note_t *pattern=song->patterns[song->currPattern];
     if(!pattern || !trackerFrameBMP)return;
+    capturePatternScopes();
     fillRect(0,0,SCREEN_W,SCREEN_H,bg);
     drawFramework1(0,0,SCREEN_W,11);
     textOut(3,2,"POS",text);printThreeDecimals(27,2,song->currPos,text);
@@ -95,6 +134,7 @@ static void fullscreenPattern(void)
         }
         y+=height;
     }
+    drawPatternScopes(bg);
     const int field=cursor.pos%6;
     drawNativeCursor(30+(cursor.pos/6)*72+(field==0?0:(field+2)*8),currentY);
     drawFramework1(0,244,SCREEN_W,11);

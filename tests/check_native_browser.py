@@ -72,6 +72,32 @@ void pptQaDisk(void){
  diskOpEntry=calloc(1,sizeof(fileEntry_t));diskOpEntry[0].nameU=strdup("tone.wav");
 }
 ''';p.write_text(s)
+ p=src/'ppt_sample_browser.c';p.write_text(p.read_text()+'''
+#include <assert.h>
+void pptQaSplitVerify(int parts){
+ int chunk=0,slots[4];int length=ppt_browser_target_length(28);
+ assert(splitPlan(length,&chunk)==parts);
+ /* Additional slots are now occupied, so use the expected test allocation. */
+ slots[0]=0;for(int i=1;i<parts;i++)slots[i]=i+1;
+ int8_t *expected=calloc(chunk*parts,1);assert(expected);
+ ppt_resample_pcm(pcm,frames,sourceHz,PAULA_PAL_CLK/periodTable[28],expected,length);
+ for(int i=0;i<parts;i++){
+  moduleSample_t *s=&song->samples[slots[i]];assert(s->length==chunk);
+  assert(!memcmp(&song->sampleData[s->offset+2],expected+i*chunk+2,chunk-2));
+  assert(s->fineTune==0 && s->volume==64);
+ }
+ free(expected);
+ int n=0;assert(splitPlan(131072,&n)==2 && n==65536);
+ assert(splitPlan(262142,&n)==4 && n==65536);
+ assert(splitPlan(4*131070+2,&n)==0);
+}
+''')
+ p=src/'ppt_input.c';p.write_text(p.read_text()+'''
+void pptQaSetFull(bool on){
+ fullPattern=on;ui.diskOpScreenShown=false;ui.samplerScreenShown=false;
+ ui.editOpScreenShown=false;ui.posEdScreenShown=false;ui.askBoxShown=false;ui.editTextFlag=false;
+}
+''')
  # Preserve native globals / helper functions defined by pt2_main.c.
  p=src/'pt2_diskop.c';p.write_text(p.read_text()+'''
 void pptQaMany(void){
@@ -103,6 +129,7 @@ void pptQaModDialog(void){
 #include "pt2_palette.h"
 #include "pt2_paula.h"
 #include "ppt_bpm.h"
+#include "pt2_scopes.h"
 #include "pt2_tables.h"
 unsigned int pptQaChoice;
 int pptQaSwitchSlot;
@@ -112,6 +139,8 @@ void pptQaRecord(void);
 void pptQaMany(void);
 int pptQaHit(int,int);
 void pptQaNameClick(void);
+void pptQaSplitVerify(int);
+void pptQaSetFull(bool);
 void pptQaModDialog(void);
 void pptQaSnapshot(const char *name){
  FILE *f=fopen(name,"wb");assert(f);fprintf(f,"P6\\n320 255\\n255\\n");
@@ -150,7 +179,7 @@ int main(void){
  assert(s->length==31388 && editor.currPlayNote==35);
  int8_t *saved=malloc(s->length);int savedLength=s->length;assert(saved);
  memcpy(saved,song->sampleData,savedLength);
- pptQaChoice=24;assert(ppt_browser_import("long.wav","long.wav"));
+ pptQaChoice=24;assert(ppt_browser_import("huge.wav","huge.wav"));
  assert(s->length==savedLength && !memcmp(saved,song->sampleData,savedLength));free(saved);
  assert(!ppt_browser_import("old.iff","old.iff"));
  pptQaChoice=24;
@@ -194,6 +223,25 @@ int main(void){
  pptQaModDialog();
  diskop.mode=DISKOP_MODE_SMP;assert(ppt_disk_visible_lines()==10);
  
+ /* Split WAV imports: selected slot plus free slots, occupied neighbor retained. */
+ editor.currSample=0;editor.sampleZero=false;pptQaChoice=28;
+ for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=0;
+ song->samples[1].length=64;memset(&song->sampleData[song->samples[1].offset],0x33,64);
+ assert(ppt_browser_import("long.wav","long.wav"));pptQaSplitVerify(2);
+ assert(!strcmp(song->samples[0].text,"long/1") && !strcmp(song->samples[2].text,"long/2"));
+ for(int i=0;i<64;i++)assert(song->sampleData[song->samples[1].offset+i]==0x33);
+ for(int i=2;i<MOD_SAMPLES;i++)song->samples[i].length=0;
+ assert(ppt_browser_import("four.wav","four.wav"));pptQaSplitVerify(4);
+ assert(!strcmp(song->samples[4].text,"four/4"));
+ for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=64;
+ song->modified=false;int savedSplitLength=song->samples[0].length;
+ int8_t savedSplit[64];memcpy(savedSplit,song->sampleData,64);
+ assert(ppt_browser_import("long.wav","long.wav"));
+ assert(!song->modified && song->samples[0].length==savedSplitLength && !memcmp(savedSplit,song->sampleData,64));
+ for(int i=1;i<MOD_SAMPLES;i++)song->samples[i].length=0;
+ assert(ppt_browser_import("huge.wav","huge.wav"));
+ assert(!song->modified && song->samples[0].length==savedSplitLength && !memcmp(savedSplit,song->sampleData,64));
+ puts("WAV split: 2/4 equal parts, PCM continuity, occupied slots, no-space and >4 rejection OK");
  /* BPM UI and offline conversion: real mouse and native decimal editor. */
  {
  ui.diskOpScreenShown=false;ui.posEdScreenShown=false;ui.editOpScreenShown=false;
@@ -246,12 +294,38 @@ int main(void){
  for(int i=0;i<64;i++)assert(song->sampleData[neighbor+i]==0x55);
  puts("BPM: native UI, 168/170 both directions, loops, metadata, neighbor slot, zero/oversize/cancel OK");
  }
+
+ {
+ int8_t traceData[512];for(int i=0;i<512;i++)traceData[i]=(int8_t)lrint(110*sin(i*0.31));
+ for(int ch=0;ch<4;ch++){
+  scope[ch].active=true;scope[ch].volume=64;scope[ch].data=traceData;scope[ch].newData=traceData;
+  scope[ch].length=512;scope[ch].newLength=512;scope[ch].pos=ch*13;editor.muted[ch]=true;
+ }
+ uint32_t *base=malloc(320*255*4),*noWave=malloc(320*255*4);assert(base && noWave);
+ memcpy(base,video.frameBuffer,320*255*4);pptQaSetFull(true);
+ ppt_views_begin();memcpy(noWave,video.frameBuffer,320*255*4);ppt_views_end();
+ assert(!memcmp(base,video.frameBuffer,320*255*4));
+ editor.muted[0]=editor.muted[2]=editor.muted[3]=false;
+ scope_t unchanged[4];memcpy(unchanged,scope,sizeof(unchanged));
+ ppt_views_begin();int counts[4]={0};
+ for(int y=0;y<255;y++)for(int x=0;x<320;x++){
+  int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
+  assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0x1c1c1c);
+  int ch=(x-32)/72;assert(x>=32 && ch<4 && x<32+ch*72+64 && y>=12 && y<244);counts[ch]++;
+ }
+ assert(counts[0]>20 && counts[1]==0 && counts[2]>20 && counts[3]>20);
+ pptQaSnapshot("full_pattern_scopes.ppm");ppt_views_end();
+ assert(!memcmp(base,video.frameBuffer,320*255*4) && !memcmp(unchanged,scope,sizeof(unchanged)));
+ pptQaSetFull(false);memset(scope,0,sizeof(unchanged));memset(editor.muted,0,sizeof(editor.muted));
+ free(base);free(noWave);
+ puts("Fullscreen scopes: per-channel bounds, muted channel, preserved text/highlights, scope state and framebuffer restore OK");
+ }
  ppt_browser_close();SDL_Quit();
  puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
  return 0;
 }
 ''';p.write_text(s)
- for name,seconds in [('tone.wav',1),('long.wav',10)]:
+ for name,seconds in [('tone.wav',1),('long.wav',10),('four.wav',20),('huge.wav',40)]:
   with wave.open(str(t/name),'wb') as w:
    w.setnchannels(2);w.setsampwidth(2);w.setframerate(44100)
    block=b''.join(struct.pack('<hh',int(12000*math.sin(2*math.pi*440*i/44100)),int(12000*math.sin(2*math.pi*440*i/44100))) for i in range(44100))
@@ -292,4 +366,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm']:shutil.copy2(t/name,dest/name)

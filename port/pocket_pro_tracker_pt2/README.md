@@ -1,11 +1,11 @@
-# Pocket Pro Tracker v0.3.34 — DISK-OP na SD2
+# Pocket Pro Tracker v0.3.36 — QUADRASCOPE w dużym PATTERN
 
-Przy każdym uruchomieniu PPT skrypt sprawdza obecność zamontowanej drugiej karty pod /mnt/sdcard (alternatywnie /sdcard). LOAD/SAVE MODULE oraz LOAD/SAVE SAMPLE startują w głównym katalogu tej karty. Potem można normalnie przeglądać katalogi, a MOD i SAMPLE zapamiętują bieżącą lokalizację w ramach sesji.
+Tylko pełnoekranowy PATTERN EDIT (R3) pokazuje w tle każdej kolumny przebieg odpowiadającego jej kanału. Ciemnoszare linie używają istniejącego renderera QUADRASCOPE; nie ma nowych odczytów danych PCM ani zmian odtwarzania.
 
-Gdy druga karta nie jest zamontowana, program wraca do swoich katalogów mods i samples. Sam pusty katalog /mnt/sdcard nie jest uznawany za kartę. Skrypt nie tworzy katalogów na SD2 i nie przenosi plików. Ustawia wyłącznie DEFAULTDIR i DEFAULTSMPDIR w protracker.ini; reszta ustawień pozostaje zachowana.
+Przebiegi są rysowane wyłącznie na pikselach tła, dzięki czemu nuty, cyfry, ramki, zaznaczenia, ROW odtwarzania i kursor zachowują swoje kolory. Nieaktywne i wyciszone kanały nie pokazują przebiegu. Po opuszczeniu dużego PATTERN żaden inny widok nie otrzymuje tej nakładki.
 
-## Instalacja
+Wszystkie funkcje v0.3.35 pozostają zachowane: import WAV na 1/2/4 sloty, BPM sampla, DISK-OP na SD2 i pozostałe sterowanie. Pliki playera, Pauli, audio, oscyloskopów oraz zapisu MOD pozostały identyczne.
 
-Na działającej v0.3.33 wystarczy podmienić skrypt Pocket Pro Tracker PT2.sh w Ports — nie trzeba kompilacji ani zmiany pliku wykonywalnego.
+Podmień wszystkie pliki wraz z .github → Commit → Push → pobierz artefakt ARM64.
 
-Dostarczony pełny SourceKit zachowuje wszystkie funkcje v0.3.33. Można też użyć standardowego Commit → Push → artefakt ARM64 po podmianie plików razem z .github.
+Weryfikacja: testy sterowania i patcha, kompilacja lokalna, integracja rzeczywistego PT2 z ASan/UBSan, kontrola granic kolumn, kanału wyciszonego, zachowania tekstu i podświetleń, niezmienionego stanu scopes oraz przywracania framebufferu. Sprawdzono render podglądu. Kompilacja ARM64 i płynność na fizycznej konsoli wymagają potwierdzenia na urządzeniu.
