@@ -34,7 +34,7 @@ jobs:
           sed -i 's/^64K_LIMIT=.*/64K_LIMIT=FALSE/' port/pocket_pro_tracker_pt2/protracker.ini
           sed -i 's/^STEREOSEPARATION=.*/STEREOSEPARATION=0/' port/pocket_pro_tracker_pt2/protracker.ini
           cat >> port/pocket_pro_tracker_pt2/protracker.ini <<'EOF'
-          ; PPT v0.3.33: XCOPY palette, four-channel VU meters hidden
+          ; PPT v0.3.34: XCOPY palette, four-channel VU meters hidden
           VIDEOSCALE=1X
           FULLSCREEN=TRUE
           FULLSCREENSTRETCH=TRUE
@@ -55,5 +55,5 @@ jobs:
           echo "XCOPY palette and no-channel-VU patch validated in PortMaster artifact"
       - uses: actions/upload-artifact@v4
         with:
-          name: PPT_v0.3.33_Sample_BPM_ARM64
+          name: PPT_v0.3.34_SD2_Default_ARM64
           path: pocket_pro_tracker_pt2.zip

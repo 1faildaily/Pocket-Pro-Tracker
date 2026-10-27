@@ -160,3 +160,5 @@ print('Default MONO, 128KB packaging and MENU+X removal verified')
 PY_MONO
 gcc -std=c11 -Wall -Wextra -Werror tests/resample_test.c -lm -o /tmp/ppt_resample_tests
 /tmp/ppt_resample_tests
+
+python3 tests/check_storage.py
