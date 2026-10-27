@@ -223,6 +223,9 @@ int main(void){
  assert(pptQaHit(315,213)==PTB_DO_SCROLLDOWN);
  assert(pptQaHit(315,225)==PTB_DO_SCROLLBOT);
  assert(pptQaHit(100,235)==PTB_SONGNAME);
+ ppt_browser_toggle_mode();assert(diskop.mode==DISKOP_MODE_SMP && ui.updateLoadMode && diskop.scrollOffset==0);
+ ppt_browser_toggle_mode();assert(diskop.mode==DISKOP_MODE_MOD && ui.updateLoadMode);
+ diskop.cached=true;diskop.scrollOffset=9;
  renderDiskOpScreen();updateDiskOp();
  ppt_views_begin();pptQaSnapshot("full_mod_list.ppm");ppt_views_end();
  pptQaNameClick();
@@ -309,7 +312,9 @@ int main(void){
 
  {
  ui.posEdScreenShown=true;ui.samplerScreenShown=false;ui.diskOpScreenShown=false;ui.editOpScreenShown=false;
- song->header.songLength=70;ppt_position_set_cursor(70);
+ song->header.songLength=70;ppt_position_set_cursor(70);displayMainScreen();
+ assert(pptQaHit(200,5)==PTB_STOP && pptQaHit(280,5)==PTB_PLAY);
+ assert(pptQaHit(200,200)==PTB_DUMMY);
  ppt_views_begin();pptQaSnapshot("full_position.ppm");ppt_views_end();
  int8_t traceData[512];for(int i=0;i<512;i++)traceData[i]=(int8_t)lrint(110*sin(i*0.31));
  for(int ch=0;ch<4;ch++){
@@ -325,8 +330,8 @@ int main(void){
  ppt_views_begin();int counts[4]={0};
  for(int y=0;y<255;y++)for(int x=0;x<320;x++){
   int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
-  assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0x606060);
-  int ch=(x-32)/72;assert(x>=44+ch*72 && ch<4 && x<44+ch*72+40 && y>=111 && y<144);counts[ch]++;
+  assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0xff5555);
+  int ch=(x-32)/72;assert(x>=44+ch*72 && ch<4 && x<44+ch*72+40 && y>=197 && y<230);counts[ch]++;
  }
  assert(counts[0]>20 && counts[1]==0 && counts[2]>20 && counts[3]>20);
  pptQaSnapshot("full_pattern_scopes.ppm");ppt_views_end();

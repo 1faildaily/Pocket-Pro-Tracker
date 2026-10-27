@@ -62,7 +62,7 @@ static void capturePatternScopes(void)
         if(!scope[ch].active || !scope[ch].volume || editor.muted[ch])continue;
         for(int y=0;y<SCOPE_HEIGHT;y++){
             if((video.frameBuffer[(55+y)*SCREEN_W+128+ch*(SCOPE_WIDTH+8)+x]&0xFFFFFF)==(video.palette[PAL_QADSCP]&0xFFFFFF)){
-                scopeTrace[ch][x]=111+y;break;
+                scopeTrace[ch][x]=197+y;break;
             }
         }
     }
@@ -71,7 +71,7 @@ static void scopeBackgroundPixel(int x,int y,uint32_t bg)
 {
     /* Text, selection, bevels and playback bar always keep their own pixels. */
     if(y>=12 && y<244 && (video.frameBuffer[y*SCREEN_W+x]&0xFFFFFF)==(bg&0xFFFFFF))
-        video.frameBuffer[y*SCREEN_W+x]=0x00606060;
+        video.frameBuffer[y*SCREEN_W+x]=0x00FF5555;
 }
 static void drawPatternScopes(uint32_t bg)
 {

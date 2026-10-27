@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.38: use the native quantized RECORD path for handheld A.
+# PPT 0.3.39: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -718,21 +718,20 @@ if p.exists():
 /* PPT_POSITION_FULL */
 void ppt_position_draw_full(void){
  int current=ppt_position_cursor(),first=ppt_position_first();
- fillRect(0,0,320,255,video.palette[PAL_BACKGRD]);
- drawFramework1(0,0,320,19);
- textOut(8,3,"POSITION EDIT",video.palette[PAL_GENTXT]);
- textOut(160,3,"LEN",video.palette[PAL_GENTXT]);printThreeDecimals(192,3,song->header.songLength,video.palette[PAL_GENTXT]);
- drawButton1(272,1,47,11,"EXIT");
- textOut(8,12,"POS  PAT  NAME",video.palette[PAL_GENTXT]);
- for(int i=0;i<32;i++){
-  int pos=first+i,y=20+i*7;if(pos>song->header.songLength || pos>=128)break;
+ /* Keep the native top panel and transport. Cover only the extended list
+    and the old pattern area below it. */
+ drawFramework1(0,99,120,145);
+ drawFramework1(120,22,188,222);
+ drawFramework1(308,99,12,145);
+ for(int i=0;i<31;i++){
+  int pos=first+i,y=23+i*7;if(pos>song->header.songLength || pos>=128)break;
   int style=ppt_loop_entry_style(pos);
   uint32_t fg=video.palette[pos==current?PAL_GENTXT:PAL_QADSCP];
-  if(pos==current || style)fillRect(4,y,312,7,style?0x555555:0x333333);
-  printThreeDecimals(8,y,pos,fg);
-  if(pos==song->header.songLength){textOut(48,y,"+++ APPEND",fg);continue;}
-  int pat=song->header.patternTable[pos];printTwoDecimals(48,y,pat,fg);
-  if(pat>=0 && pat<MAX_PATTERNS)textOutN(88,y,posEdNames[pat],15,fg);
+  if(pos==current || style)fillRect(128,y,176,7,style?0x555555:0x333333);
+  printThreeDecimals(128,y,pos,fg);
+  if(pos==song->header.songLength){textOut(160,y,"+++ APPEND",fg);continue;}
+  int pat=song->header.patternTable[pos];printTwoDecimals(160,y,pat,fg);
+  if(pat>=0 && pat<MAX_PATTERNS)textOutN(184,y,posEdNames[pat],15,fg);
  }
  drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
 }
@@ -747,10 +746,10 @@ if p.exists():
   s=s.replace(a,a+r'''
     /* PPT_POSITION_MOUSE: never click hidden native pattern controls. */
     if(ui.posEdScreenShown && !ui.askBoxShown && !ui.editTextFlag && !ui.diskOpScreenShown && mouse.leftButtonPressed){
-        if(mouse.x>=272 && mouse.y<13){ui.posEdScreenShown=false;displayMainScreen();return true;}
-        if(mouse.y>=20 && mouse.y<244){int first=ppt_position_first();
-            int pos=first+(mouse.y-20)/7;if(pos<=song->header.songLength)ppt_position_set_cursor(pos);}
-        return true;
+        if(mouse.x>=120 && mouse.x<308 && mouse.y>=22 && mouse.y<244){int first=ppt_position_first();
+            int pos=first+(mouse.y-23)/7;if(pos<=song->header.songLength)ppt_position_set_cursor(pos);
+            return true;}
+        if(mouse.y>=99 && mouse.y<244)return true;
     }
 ''',1)
   p.write_text(s)
@@ -761,7 +760,7 @@ if p.exists():
  if 'PPT_POSITION_HIT_GUARD' not in s:
   if '#include "ppt_input.h"' not in s:s='#include "ppt_input.h"\n'+s
   a='static int32_t checkGUIButtons(void)\n{'
-  s=s.replace(a,a+'\n    /* PPT_POSITION_HIT_GUARD */\n    if(ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag)return PTB_DUMMY;',1)
+  s=s.replace(a,a+'\n    /* PPT_POSITION_HIT_GUARD */\n    if(ui.posEdScreenShown && !ui.diskOpScreenShown && !ui.askBoxShown && !ui.editTextFlag && ((mouse.x>=120 && mouse.x<308 && mouse.y>=22) || mouse.y>=99))return PTB_DUMMY;',1)
   for name,step in [('mouseWheelUpHandler',-1),('mouseWheelDownHandler',1)]:
    a='void '+name+'(void)\n{'
    assert a in s

@@ -152,6 +152,12 @@ void ppt_browser_mix(int16_t *stream,int count){
         previewPos+=step;
     }
 }
+void ppt_browser_toggle_mode(void){
+    if(!ui.diskOpScreenShown || ui.askBoxShown || ui.editTextFlag)return;
+    stopPreview();diskop.mode=diskop.mode==DISKOP_MODE_MOD?DISKOP_MODE_SMP:DISKOP_MODE_MOD;
+    setPathFromDiskOpMode();diskop.scrollOffset=0;diskop.cached=false;
+    ui.updateDiskOpFileList=true;ui.updateLoadMode=true;
+}
 int ppt_browser_target_length(int pitch){
     if(!pcm || !sourceHz || pitch<0 || pitch>35)return 0;
     return ppt_resample_length(frames,sourceHz,PAULA_PAL_CLK/periodTable[pitch]);

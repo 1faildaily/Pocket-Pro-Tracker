@@ -927,3 +927,5 @@ bool ppt_bpm_editing(void){return false;}
 void ppt_bpm_next(void){}
 void ppt_bpm_previous(void){}
 void ppt_bpm_direction(int d){(void)d;}
+
+void ppt_browser_toggle_mode(void){}

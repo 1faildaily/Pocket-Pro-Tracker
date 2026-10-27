@@ -1,29 +1,23 @@
-# Pocket Pro Tracker v0.3.38 — pełny POSITION / małe scopes / NOTE sampla
+# Pocket Pro Tracker v0.3.39 — DISK SELECT / oryginalny POSITION / czerwone scopes
 
-## PATTERN
+## DISK-OP
 
-Przebiegi w dużym PATTERN mają natywne wymiary QUADRASCOPE: 40×33 piksele, pośrodku każdej kolumny. Nie są już skalowane do wysokości ekranu. Zostaje jasnoszary kolor i ochrona tekstu, kursorów oraz podświetleń.
+SELECT przełącza MODULE ↔ SAMPLE (pary LOAD/SAVE MODULE oraz LOAD/SAVE SAMPLE). Natywna strzałka po lewej od LOAD wskazuje bieżący tryb. Odsłuch WAV zatrzymuje się przy przełączaniu; lista jest odświeżana, a kursor przewijania wraca na początek. W aktywnym oknie dialogowym lub edycji tekstu SELECT nie przełącza trybu.
+
+## Duży PATTERN
+
+Przebiegi nadal mają rozmiar 40×33 jak w QUADRASCOPE. Są jasnoczerwone (FF5555) i leżą na dole kolumn, z odstępem dwóch rzędów pikselowych patternu (14 px) nad paskiem STATUS. Nie zasłaniają cyfr, kursora, zaznaczeń ani szarego ROW.
 
 ## POSITION-ED
 
-Lista zajmuje cały ekran poniżej nagłówka i pokazuje do 32 pozycji. D-pad góra/dół przesuwa kursor, lewo zmniejsza numer patternu o 1, prawo zwiększa o 1 (00–99). Edycja kolejności wymaga zatrzymania odtwarzania.
+Przywrócony oryginalny interfejs: górny panel PLAY/STOP/PATTERN i INSERT/DELETE, lewa część programu oraz natywne boczne przyciski listy, w tym EXIT. Wydłużona jest tylko prawa lista pozycji: od oryginalnego początku do paska STATUS (do 31 wpisów). Dolny obszar patternu jest zasłonięty, aby nie mieszał się z wydłużoną listą.
 
-Pod ostatnim wpisem znajduje się APPEND. Można tam ustawić kursor i wkleić SELECT+A skopiowany zakres na końcu. Lewo/prawo na APPEND tworzy pojedynczą nową pozycję i ustawia jej numer patternu. Limit pozostaje 128 pozycji, bez usuwania końca utworu.
+Zachowane D-pad góra/dół, lewo/prawo zmiana numeru patternu, zaznaczanie i pętle, SELECT+A wklejanie z przesunięciem oraz APPEND na końcu. Edycja i wklejanie wymagają zatrzymania odtwarzania. Natywne PLAY/STOP działają myszą/X jak wcześniej.
 
-SELECT+B → zaznaczenie → B: zapamiętanie zakresu i pętla. Y usuwa pętlę, zachowując kopię. SELECT+A wkleja przed kursorem i przesuwa kolejne wpisy. Mysz wskazuje wiersz, kółko przewija, EXIT wraca do głównego widoku. Inne widoki pozostają dostępne prawym analogiem.
+## Instalacja i weryfikacja
 
-## SAMPLER NOTE
+Pozostałe funkcje v0.3.38 zachowane: NOTE importu w bieżącej sesji, stały źródłowy BPM, ręczne 1/2/4 części WAV z przycinaniem i SD2 na starcie. Player, Paula, audio i zapis MOD pozostają bez zmian.
 
-NOTE nad OFFS pokazuje nutę wybraną przy imporcie WAV, osobno dla każdego slotu (również podzielonych części). L2/R2 przełącza wyświetlaną nutę wraz z samplem. Nieznana nuta to ---. Podczas natywnego wyboru resamplingu nadal wyświetlany jest wybierany cel.
+Podmień wszystkie pliki wraz z .github → Commit → Push → artefakt ARM64.
 
-To informacja pamiętana w bieżącej sesji, bez zmiany formatu MOD: zwykły MOD nie przechowuje nuty importu WAV.
-
-## BPM
-
-DO nie zmienia już źródłowego BPM po konwersji. Oba wpisane pola pozostają takie, jakie ustawił użytkownik — kolejne DO ponownie stosuje ich proporcję.
-
-## Instalacja
-
-Zachowane: ręczne 1/2/4 części WAV i przycinanie końca, SD2 jako katalog startowy oraz wcześniejsze sterowanie. Podmień wszystkie pliki wraz z .github → Commit → Push → artefakt ARM64.
-
-Testy sterowania, dopisywania i edycji pozycji, wklejania na końcu, integracja WAV/BPM/scopes z ASan/UBSan oraz kompilacja lokalna. Player, Paula, audio i zapis MOD bez zmian. Działanie i płynność na fizycznym Anbernicu wymagają sprawdzenia.
+Przeszły testy sterowania i patcha, integracja natywnego PT2 z ASan/UBSan oraz kompilacja lokalna. Sprawdzane przełączenie trybu DISK, flagi natywnej strzałki, zachowanie PLAY/STOP w POSITION, blokada ukrytego patternu i położenie/kolor przebiegów. Sterowanie i płynność na fizycznej konsoli wymagają sprawdzenia.
