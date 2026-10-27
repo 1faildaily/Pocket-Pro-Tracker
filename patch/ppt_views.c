@@ -105,12 +105,17 @@ void ppt_views_begin(void)
     overlaySaved=false;
     const bool full=ppt_full_pattern_active();
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
-    const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP && !ui.askBoxShown && !ui.editTextFlag;
+    const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP;
     if(!full && row<0 && !sample)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
     /* Solid soft bar only: no contrasting one-pixel underline. */
-    if(sample)ppt_browser_draw();
+    if(sample){
+        if(ui.askBoxShown && ppt_browser_import_dialog()){
+            fillRect(0,136,320,119,video.palette[PAL_GENBKG]);
+            ppt_browser_draw_import_dialog();
+        }else ppt_browser_draw();
+    }
     if(row<0){drawNativeMouse();return;}
     const int y=35+row*6;
     const uint32_t bg=video.palette[PAL_BACKGRD];

@@ -68,7 +68,8 @@ bool ppt_browser_sample_mode(void){return ui.diskOpScreenShown;}
 void ppt_browser_update(void){}
 void ppt_browser_close(void){}
 void ppt_browser_preview(void){browserPreviews++;}
-bool ppt_browser_import_dialog(void){return false;}
+static bool browserDialog;
+bool ppt_browser_import_dialog(void){return browserDialog;}
 static int diskMoves,diskActivations;
 void ppt_disk_move(int d){diskMoves+=d;}
 void ppt_disk_activate(void){diskActivations++;}
@@ -103,7 +104,20 @@ int main(void){
   buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
   assert(diskActivations==1 && eventsPushed==eventCount);
   buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);assert(browserPreviews==1);
-  video.window=(SDL_Window*)1;
+  int slotEvents=eventsPushed;
+  editor.songPlaying=true;
+  buttonEvent(PPT_BTN_R2,true);releaseButton(PPT_BTN_R2);assert(editor.currSample==1);
+  ui.askBoxShown=true;browserDialog=true;
+  buttonEvent(PPT_BTN_R2,true);releaseButton(PPT_BTN_R2);assert(editor.currSample==2);
+  buttonEvent(PPT_BTN_L2,true);releaseButton(PPT_BTN_L2);assert(editor.currSample==1);
+  assert(eventsPushed==slotEvents && editor.songPlaying);
+  directionAction(0);assert(lastEvent.key.keysym.sym==SDLK_UP);
+  directionAction(1);assert(lastEvent.key.keysym.sym==SDLK_DOWN);
+  directionAction(2);assert(lastEvent.key.keysym.sym==SDLK_LEFT);
+  directionAction(3);assert(lastEvent.key.keysym.sym==SDLK_RIGHT);
+  ui.askBoxShown=false;browserDialog=false;editor.songPlaying=false;editor.currSample=0;
+
+  eventCount=eventsPushed;video.window=(SDL_Window*)1;
   buttonEvent(PPT_BTN_X,true);assert(mouseDownForwarded[PPT_BTN_X]);
   releaseButton(PPT_BTN_X);assert(eventsPushed==eventCount+2);
   ui.diskOpScreenShown=false;

@@ -12,3 +12,8 @@ int ppt_browser_target_length(int pitch);
 void ppt_set_import_note(int pitch);
 
 bool ppt_browser_sample_mode(void);
+
+int ppt_browser_import_pitch(void);
+void ppt_browser_adjust_pitch(int semitones);
+void ppt_browser_draw_import_choice(void);
+void ppt_browser_draw_import_dialog(void); /* native modal, redrawn over preview */

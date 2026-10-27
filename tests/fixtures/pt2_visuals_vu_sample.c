@@ -37,3 +37,13 @@ void flipFrame(void)
 {
 	SDL_UpdateTexture(video.texture, NULL, video.frameBuffer, SCREEN_W * sizeof (int32_t));
 }
+
+void updatePatternData(void)
+{
+    if (ui.updatePatternData)
+    {
+        ui.updatePatternData=false;
+		if (!ui.samplerScreenShown)
+			redrawPattern();
+    }
+}

@@ -8,13 +8,32 @@ root=Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory() as td:
  t=Path(td);src=t/'src';shutil.copytree(root/'src',src)
  # Only the modal wait loop is bypassed: the real native dialog is drawn first.
- p=src/'pt2_askbox.c';s=p.read_text();s='extern unsigned int pptQaChoice;\nvoid pptQaSnapshot(const char *);\n'+s
+ p=src/'pt2_askbox.c';s=p.read_text();s='#include <assert.h>\nextern unsigned int pptQaChoice;\nextern int pptQaSwitchSlot;\nvoid updatePatternData(void);\nvoid pptQaSnapshot(const char *);\nvoid pptQaSlot(void);\n'+s
  anchor='\tpointerSetMode(POINTER_MODE_MSG1, NO_CARRY);'
  assert s.count(anchor)==1
  s=s.replace(anchor,'''    if(dialogType==ASKBOX_PPT_WAV_IMPORT){
-        pptQaSnapshot("dialog.ppm");ui.askBoxShown=false;return pptQaChoice;
+        assert(ppt_browser_import_pitch()==28); /* E-3 on EVERY open */
+        ppt_browser_adjust_pitch(-100);assert(ppt_browser_import_pitch()==0);
+        ppt_browser_adjust_pitch(100);assert(ppt_browser_import_pitch()==35);
+        ppt_browser_adjust_pitch(-7);assert(ppt_browser_import_pitch()==28);
+        if(pptQaChoice<=35)ppt_browser_adjust_pitch((int)pptQaChoice-28);
+        if(pptQaSwitchSlot)pptQaSlot();
+        ppt_browser_draw_import_dialog();
+        uint32_t lower[320*119];memcpy(lower,&video.frameBuffer[136*320],sizeof(lower));
+        ui.updatePatternData=true;updatePatternData();
+        assert(!memcmp(lower,&video.frameBuffer[136*320],sizeof(lower)));
+        ppt_views_begin();pptQaSnapshot("dialog.ppm");ppt_views_end();
+        pptImportDialog=NULL;ui.askBoxShown=false;return pptQaChoice;
     }
 '''+anchor,1);p.write_text(s)
+ p=src/'ppt_input.c';p.write_text(p.read_text()+'''
+void pptQaSlot(void){
+ int before=editor.currSample;bool playing=editor.songPlaying;
+ buttonEvent(PPT_BTN_R2,true);releaseButton(PPT_BTN_R2);
+ ASSERT(editor.currSample==before+1 && editor.songPlaying==playing);
+ ASSERT(!mouseDownForwarded[PPT_BTN_R2]);
+}
+''')
  p=src/'pt2_diskop.c';s=p.read_text()+'''
 void pptQaDisk(void){
  diskop.cached=true;diskop.numEntries=1;diskop.scrollOffset=0;diskop.mode=DISKOP_MODE_SMP;
@@ -27,7 +46,11 @@ void pptQaDisk(void){
 #include <assert.h>
 #include "ppt_sample_browser.h"
 #include "pt2_palette.h"
+#include "pt2_paula.h"
+#include "pt2_tables.h"
 unsigned int pptQaChoice;
+int pptQaSwitchSlot;
+void pptQaSlot(void);
 void pptQaDisk(void);
 void pptQaSnapshot(const char *name){
  FILE *f=fopen(name,"wb");assert(f);fprintf(f,"P6\\n320 255\\n255\\n");
@@ -80,8 +103,19 @@ int main(void){
  assert(s->loopLength>=1600 && !(s->loopLength&1));
  int lengthBefore=s->length;
  assert(ppt_browser_import("broken.wav","broken.wav"));assert(s->length==lengthBefore);
+ for(int pitch=0;pitch<36;pitch++){
+  pptQaChoice=(unsigned)pitch;assert(ppt_browser_import("tone.wav","tone.wav"));
+  int expected=(int)llround(PAULA_PAL_CLK/periodTable[pitch]);expected=(expected+1)&~1;
+  assert(s->length==expected && editor.currPlayNote==pitch);
+ }
+ editor.songPlaying=true;editor.currSample=0;
+ int originalLength=s->length;
+ pptQaSwitchSlot=1;pptQaChoice=28;
+ assert(ppt_browser_import("tone.wav","tone.wav"));
+ assert(editor.currSample==1 && song->samples[1].length==20864 && s->length==originalLength);
+ assert(editor.songPlaying);pptQaSwitchSlot=0;editor.songPlaying=false;
  ppt_browser_close();SDL_Quit();
- puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, C3/B3 import, oversize rejection OK");
+ puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
  return 0;
 }
 ''';p.write_text(s)

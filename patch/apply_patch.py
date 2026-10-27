@@ -465,45 +465,61 @@ if 'case ASKBOX_PPT_WAV_IMPORT:' not in s:
     custom=r'''
         case ASKBOX_PPT_WAV_IMPORT:
         {
-            SET_DIALOG(10, 130, 300, 91);
-            INIT_BUTTONS(3, -1, 24);
-            SET_BUTTON(0, true,  "C-3", SDLK_c, 24, 20, 139, 182, 193);
-            SET_BUTTON(1, false, "B-3", SDLK_b, 35, 160, 299, 182, 193);
-            SET_BUTTON(2, false, "CANCEL", SDLK_ESCAPE, -1, 212, 299, 204, 215);
-            drawDialog(&d);
-            textOut2(20, 136, "PRESERVE SPEED AT NOTE");
-            char line[40];
-            snprintf(line,sizeof(line),"%.2f HZ",PAULA_PAL_CLK/periodTable[24]);
-            textOut2(20, 149, line);
-            snprintf(line,sizeof(line),"%.2f HZ",PAULA_PAL_CLK/periodTable[35]);
-            textOut2(160, 149, line);
-            snprintf(line,sizeof(line),"%d BYTES",ppt_browser_target_length(24));
-            textOut2(20, 162, line);
-            snprintf(line,sizeof(line),"%d BYTES",ppt_browser_target_length(35));
-            textOut2(160, 162, line);
-            snprintf(line,sizeof(line),"MAX %d BYTES",config.maxSampleLength);
-            textOut2(20, 207, line);
+            SET_DIALOG(10, 138, 300, 105);
+            INIT_BUTTONS(2, -1, 28);
+            SET_BUTTON(0, true,  "LOAD", SDLK_RETURN, 28, 20, 139, 222, 233);
+            SET_BUTTON(1, false, "CANCEL", SDLK_ESCAPE, -1, 160, 299, 222, 233);
+            pptImportDialog=&d;
+            ppt_browser_draw_import_dialog();
         }
         break;
 '''
     s=s.replace(anchor,custom+anchor,1)
+    typeAnchor='} dialog_t;'
+    assert s.count(typeAnchor)==1
+    s=s.replace(typeAnchor,typeAnchor+'\nstatic dialog_t *pptImportDialog;',1)
+    redrawAnchor='\nvoid removeAskBox(void)'
+    assert s.count(redrawAnchor)==1
+    redraw=r'''
+void ppt_browser_draw_import_dialog(void)
+{
+    if (pptImportDialog == NULL) return;
+    pptImportDialog->defaultReturnValue=ppt_browser_import_pitch();
+    pptImportDialog->buttons[0].returnValue=ppt_browser_import_pitch();
+    drawDialog(pptImportDialog);
+    textOut2(20, 144, "RESAMPLE - ALL PT2 NOTES");
+    ppt_browser_draw_import_choice();
+}
+'''
+    s=s.replace(redrawAnchor,'\n'+redraw+redrawAnchor,1)
+    s=s.replace('void removeAskBox(void)\n{','void removeAskBox(void)\n{\n\tpptImportDialog=NULL;',1)
+
     anchor='\t\t\t\t// abort (escape key)'
     assert s.count(anchor)==1
     key=r'''
                 if (dialogType == ASKBOX_PPT_WAV_IMPORT &&
                     (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN))
                 {
-                    d.defaultReturnValue=(key == SDLK_LEFT || key == SDLK_UP)?24:35;
-                    for (int i=0;i<2;i++)
-                    {
-                        button_t *b=&d.buttons[i];
-                        if (b->returnValue==d.defaultReturnValue)
-                            drawButton2(b->x1,b->y1,b->x2-b->x1+1,b->y2-b->y1+1,b->text);
-                        else
-                            drawButton1(b->x1,b->y1,b->x2-b->x1+1,b->y2-b->y1+1,b->text);
-                    }
+                    const int delta=key==SDLK_UP?1:key==SDLK_DOWN?-1:key==SDLK_LEFT?-12:12;
+                    ppt_browser_adjust_pitch(delta);
+                    d.defaultReturnValue=ppt_browser_import_pitch();
+                    d.buttons[0].returnValue=d.defaultReturnValue;
                     continue;
                 }
 '''
     s=s.replace(anchor,key+anchor,1)
     ask.write_text(s)
+
+vs=vis.read_text()
+if 'PPT_SAMPLE_BROWSER_NO_PATTERN' not in vs:
+    anchor='\t\tif (!ui.samplerScreenShown)\n\t\t\tredrawPattern();'
+    assert vs.count(anchor)==1, 'Pattern refresh anchor changed'
+    vs=vs.replace(anchor,'\t\t/* PPT_SAMPLE_BROWSER_NO_PATTERN: no animated pattern behind waveform/dialog. */\n\t\tif (!ui.samplerScreenShown && !(ui.diskOpScreenShown && diskop.mode == DISKOP_MODE_SMP))\n\t\t\tredrawPattern();',1)
+    vis.write_text(vs)
+
+ds=disk.read_text()
+if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
+    anchor='void renderDiskOpScreen(void)\n{'
+    assert ds.count(anchor)==1
+    ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
+    disk.write_text(ds)

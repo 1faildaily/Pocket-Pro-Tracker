@@ -29,6 +29,7 @@ static float *pcm;
 static int frames,sourceHz;
 static double previewPos;
 static bool previewPlaying,importDialog;
+static int importPitch=28; /* E-3: default on EVERY import */
 static char cachedPath[PATH_MAX+1],cachedName[PATH_MAX+1];
 static char message[35]="SELECT A WAV";
 static int peakLo[304],peakHi[304];
@@ -146,6 +147,26 @@ int ppt_browser_target_length(int pitch){
     return ppt_resample_length(frames,sourceHz,PAULA_PAL_CLK/periodTable[pitch]);
 }
 bool ppt_browser_import_dialog(void){return importDialog;}
+int ppt_browser_import_pitch(void){return importPitch;}
+void ppt_browser_adjust_pitch(int semitones){
+    importPitch+=semitones;
+    if(importPitch<0)importPitch=0;
+    if(importPitch>35)importPitch=35;
+}
+void ppt_browser_draw_import_choice(void){
+    char line[38];
+    const uint32_t bg=video.palette[PAL_GENBKG];
+    fillRect(18,154,284,44,bg);
+    snprintf(line,sizeof(line),"SLOT %02X   NOTE %s",editor.currSample+1,noteNames1[2+importPitch]);
+    textOut2(20,155,line);
+    snprintf(line,sizeof(line),"%.2f HZ  %d BYTES",PAULA_PAL_CLK/periodTable[importPitch],ppt_browser_target_length(importPitch));
+    textOut2(20,166,line);
+    textOut2(20,177,"UP/DOWN NOTE  LEFT/RIGHT OCT");
+    snprintf(line,sizeof(line),"MAX %d BYTES",config.maxSampleLength);
+    textOut2(20,188,line);
+    textOut2(20,202,"L2/R2 SLOT  A LOAD  B CANCEL");
+}
+
 bool ppt_browser_import(const char *path,const char *name){
     if(!isWav(path))return false; /* retain original loader for other formats */
     if(editor.sampleZero){statusNotSampleZero();return true;}
@@ -157,10 +178,11 @@ bool ppt_browser_import(const char *path,const char *name){
     }
     if(!prepare(absolute,name)){showBrowserError();return true;}
     stopPreview();
+    importPitch=28;
     importDialog=true;
     uint32_t pitch=askBox(ASKBOX_PPT_WAV_IMPORT,"WAV RESAMPLE");
     importDialog=false;
-    if(pitch!=24 && pitch!=35)return true;
+    if(pitch>35)return true;
     const int length=ppt_browser_target_length((int)pitch);
     if(length<2 || length>config.maxSampleLength){displayErrorMsg("SAMPLE TOO LONG !");return true;}
     int8_t *converted=malloc((size_t)length);
@@ -184,7 +206,8 @@ bool ppt_browser_import(const char *path,const char *name){
     editor.sampleZero=false;editor.samplePos=0;
     fillSampleRedoBuffer(editor.currSample);updateCurrSample();
     ppt_set_import_note((int)pitch);updateWindowTitle(MOD_IS_MODIFIED);
-    displayMsg(pitch==24?"LOADED FOR C-3":"LOADED FOR B-3");return true;
+    char loaded[18];snprintf(loaded,sizeof(loaded),"LOADED FOR %s",noteNames1[2+pitch]);
+    displayMsg(loaded);return true;
 }
 void ppt_browser_draw(void){
     const uint32_t fg=video.palette[PAL_GENTXT],bg=video.palette[PAL_GENBKG];
@@ -197,7 +220,7 @@ void ppt_browser_draw(void){
     for(int x=0;x<304;x++)vLine(x+8,zero-peakHi[x],peakHi[x]-peakLo[x]+1,fg);
     char info[40];snprintf(info,sizeof(info),"%d HZ  %.2f SEC",sourceHz,(double)frames/sourceHz);
     textOutN(8,230,info,37,fg);
-    snprintf(info,sizeof(info),"C-3 %.2f / B-3 %.2f HZ",PAULA_PAL_CLK/periodTable[24],PAULA_PAL_CLK/periodTable[35]);
+    snprintf(info,sizeof(info),"SLOT %02X  L2/R2 SELECT",editor.currSample+1);
     textOutN(8,240,info,38,fg);
 }
 void ppt_browser_close(void){clearPCM();cachedPath[0]=cachedName[0]=0;}

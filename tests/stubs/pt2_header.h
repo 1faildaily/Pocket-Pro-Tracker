@@ -50,3 +50,8 @@ void SDL_WarpMouseInWindow(SDL_Window*,int,int);
 #define SDLK_LEFT 1073741904
 #define SDLK_RIGHT 1073741903
 #endif
+
+#ifndef SDLK_UP
+#define SDLK_UP 1073741906
+#define SDLK_DOWN 1073741905
+#endif
