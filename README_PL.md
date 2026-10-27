@@ -1,3 +1,26 @@
+# Pocket Pro Tracker v0.3.24 - usuwanie NOTE i zaznaczenia
+
+Baza: v0.3.23. Zachowane domyślne MONO i sample do 131070 bajtów.
+SAVE MODULE i struktura MOD pozostają bez zmian.
+
+- A+B na NOTE usuwa nutę oraz numer sampla, pozostawia komendę i parametr FX.
+- Na innych polach A+B działa jak wcześniej.
+- SELECT+B rozpoczyna zaznaczanie, D-pad rozszerza blok.
+- Y podczas aktywnego zaznaczania usuwa dokładnie zaznaczone pola i kończy zaznaczanie.
+- B nadal kopiuje blok; SELECT+A wkleja. Usuwanie nie nadpisuje schowka.
+- W bloku NOTE, cyfry SAMPLE i FX są niezależne: aby usunąć także sample,
+  obejmij zaznaczeniem jego cyfry. Reguła NOTE+sample dotyczy skrótu A+B.
+- W czasie odtwarzania edycja wymaga LIVE EDIT.
+- POSITION-ED, SAMPLER, edycja nazw i potwierdzenia zachowują własną obsługę Y.
+
+Instalacja: zastąp pliki wraz z .github -> Commit -> Push.
+Artefakt: PPT_v0.3.24_Note_Block_Delete_ARM64.
+Przy instalacji zachowaj ustawienia nowego protracker.ini: MONO oraz 128KB.
+Testy kontrolera sprawdzają NOTE+sample bez zmiany FX, granice bloku,
+usuwanie pojedynczej cyfry, zachowanie schowka i brak kliknięcia Y.
+Test na urządzeniu i kompilacja ARM64 wymagają sprawdzenia.
+
+---
 # Pocket Pro Tracker v0.3.23 - domyślne MONO + sample 128 KB
 
 Usunięto skrót MENU + X i całe odliczanie 2 sekund.

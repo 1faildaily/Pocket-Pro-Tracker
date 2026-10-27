@@ -76,6 +76,27 @@ int main(void){
   state.patterns[0]=patt;
   cursor.pos=0;
   editor.currSample=0;
+  /* v0.3.24: note erase includes sample, FX preserved; rectangle is exact. */
+  patt[0]=(note_t){.period=428,.sample=17,.command=0xA,.param=0xBC};
+  erase();assert(patt[0].period==0 && patt[0].sample==0);
+  assert(patt[0].command==0xA && patt[0].param==0xBC);
+  patt[0]=(note_t){.period=428,.sample=17,.command=0xA,.param=0xBC};
+  patt[4]=patt[0];patt[8]=patt[0];
+  clip.kind=PPT_CLIP_PATTERN;clip.cells[0][0].period=123;
+  beginSelection();song->currRow=1;cursor.pos=2;
+  int prevEvents=eventsPushed;
+  buttonEvent(PPT_BTN_Y,true);releaseButton(PPT_BTN_Y);
+  assert(!selecting && eventsPushed==prevEvents);
+  assert(patt[0].period==0 && patt[0].sample==0 && patt[0].command==0xA && patt[0].param==0xBC);
+  assert(patt[4].period==0 && patt[4].sample==0 && patt[4].param==0xBC);
+  assert(patt[8].period==428 && patt[8].sample==17);
+  assert(clip.kind==PPT_CLIP_PATTERN && clip.cells[0][0].period==123);
+  /* Reverse direction and single-nibble deletion must preserve neighbors. */
+  song->currRow=1;cursor.pos=5;beginSelection();song->currRow=0;
+  eraseSelection();assert(patt[0].param==0xB0 && patt[4].param==0xB0);
+  assert(patt[8].param==0xBC);
+  memset(patt,0,sizeof(patt));memset(&clip,0,sizeof(clip));
+  song->currRow=0;cursor.pos=0;state.modified=false;
   /* v0.3.17: SHIFT (physical SELECT) + D-pad pattern EDITSKIP.
      Native PT2 stores the speed at editor.editMoveAdd = 0..9. */
   assert(editor.editMoveAdd==0);
