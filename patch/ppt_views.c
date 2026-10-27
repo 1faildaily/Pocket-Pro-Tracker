@@ -1,3 +1,4 @@
+#include "ppt_bpm.h"
 /* Full view uses PT2's original frame slices, bitmap font and cursor assets.
    Presentation only: framebuffer restored immediately after texture upload. */
 #include <stdint.h>
@@ -73,7 +74,7 @@ static void fullscreenPattern(void)
         blit32(0,y,SCREEN_W,height,&trackerFrameBMP[(current?188:140)*SCREEN_W]);
         if(current)currentY=y;
         const uint32_t rowBg=current?bar:(row==ghost?0x00333333:bg);
-        const uint32_t rowFg=current?text:fg;
+        const uint32_t rowFg=(current || row==ghost)?text:fg;
         if(current)printTwoDecimalsBigBg(8,ty,row,rowFg,rowBg);
         else printTwoDecimalsBg(8,ty,row,rowFg,rowBg);
         for(int channel=0;channel<4;channel++){
@@ -106,8 +107,9 @@ void ppt_views_begin(void)
     const bool full=ppt_full_pattern_active();
     const bool modList=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_MOD ;
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
+    const bool bpm=ui.editOpScreenShown && ui.editOpScreen==2 && !ui.askBoxShown && !ui.diskOpScreenShown && !ui.posEdScreenShown;
     const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP;
-    if(!full && row<0 && !sample && !modList)return;
+    if(!full && row<0 && !sample && !modList && !bpm)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
     if(modList){
@@ -124,6 +126,7 @@ void ppt_views_begin(void)
             ppt_browser_draw_import_dialog();
         }else ppt_browser_draw();
     }
+    if(bpm)ppt_bpm_draw();
     if(row<0){drawNativeMouse();return;}
     const int y=35+row*6;
     const uint32_t bg=video.palette[PAL_BACKGRD];

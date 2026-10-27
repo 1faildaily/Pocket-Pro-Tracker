@@ -102,6 +102,7 @@ void pptQaModDialog(void){
 #include "ppt_sample_browser.h"
 #include "pt2_palette.h"
 #include "pt2_paula.h"
+#include "ppt_bpm.h"
 #include "pt2_tables.h"
 unsigned int pptQaChoice;
 int pptQaSwitchSlot;
@@ -119,8 +120,8 @@ void pptQaSnapshot(const char *name){
 int main(void){
  assert(SDL_Init(SDL_INIT_TIMER)==0);
  video.frameBuffer=calloc(320*255,sizeof(uint32_t));assert(video.frameBuffer);
- video.palette[PAL_BACKGRD]=0x660000;video.palette[PAL_GENBKG]=0;video.palette[PAL_QADSCP]=0xffffff;
- video.palette[PAL_GENTXT]=0xff0000;video.palette[PAL_PATTXT]=0;
+ video.palette[PAL_BACKGRD]=0;video.palette[PAL_GENBKG]=0;video.palette[PAL_QADSCP]=0xffffff;
+ video.palette[PAL_GENTXT]=0xff0000;video.palette[PAL_PATTXT]=0xffffff;
  video.palette[PAL_BORDER]=0xaa0000;video.palette[PAL_GENBKG2]=0x440000;
  video.palette[PAL_COLORKEY]=0x12345678;assert(unpackBMPs());
  setupSprites();config.maxSampleLength=131070;song=createEmptyMod();assert(song);
@@ -192,6 +193,59 @@ int main(void){
  leaveTextEditMode(EDIT_TEXT_UPDATE);
  pptQaModDialog();
  diskop.mode=DISKOP_MODE_SMP;assert(ppt_disk_visible_lines()==10);
+ 
+ /* BPM UI and offline conversion: real mouse and native decimal editor. */
+ {
+ ui.diskOpScreenShown=false;ui.posEdScreenShown=false;ui.editOpScreenShown=false;
+ ui.samplerScreenShown=false;samplerScreen();
+ assert(ui.samplerScreenShown && ui.editOpScreenShown && ui.editOpScreen==2);
+ editor.currSample=0;editor.sampleZero=false;s=&song->samples[0];
+ s->length=10000;s->loopStart=1000;s->loopLength=2000;s->fineTune=3;s->volume=47;
+ strcpy(s->text,"BPM TEST");
+ for(int i=0;i<10000;i++)song->sampleData[s->offset+i]=(int8_t)lrint(80*sin(2*3.141592653589793*100*i/10000));
+ uint32_t neighbor=song->samples[1].offset;memset(&song->sampleData[neighbor],0x55,64);
+ uint16_t noteBefore=song->patterns[0][0].period;
+ song->modified=false;
+ mouse.x=126;mouse.y=93;editor.errorMsgActive=false;editor.errorMsgBlock=false;
+ mouseButtonDownHandler(SDL_BUTTON_LEFT);mouseButtonUpHandler(SDL_BUTTON_LEFT);
+ assert(ppt_bpm_editing());
+ textEdit.tmpDisp16=168;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ ppt_bpm_begin(true);textEdit.tmpDisp16=170;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ assert(!song->modified);
+ editor.samplePosDisp=&editor.samplePos;editor.sampleVolDisp=&editor.sampleVol;
+ updateCurrSample();updateEditOp();
+ ppt_views_begin();pptQaSnapshot("bpm_editor.ppm");ppt_views_end();
+ mouse.x=200;mouse.y=93;mouseButtonDownHandler(SDL_BUTTON_LEFT);mouseButtonUpHandler(SDL_BUTTON_LEFT);
+ assert(s->length==9882 && s->loopStart==988 && s->loopLength==1976);
+ assert(s->fineTune==3 && s->volume==47 && !strcmp(s->text,"BPM TEST"));
+ assert(song->patterns[0][0].period==noteBefore && song->modified);
+ for(int i=0;i<64;i++)assert(song->sampleData[neighbor+i]==0x55);
+ int crossings=0;for(int i=1;i<s->length;i++)if(song->sampleData[s->offset+i-1]<0 && song->sampleData[s->offset+i]>=0)crossings++;
+ assert(crossings>=98 && crossings<=101);
+ ppt_bpm_begin(false);textEdit.tmpDisp16=170;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ ppt_bpm_begin(true);textEdit.tmpDisp16=168;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ assert(ppt_bpm_apply() && s->length==10000);
+ int before=s->length;int8_t saved[64];memcpy(saved,&song->sampleData[s->offset],64);
+ song->modified=false;
+ ppt_bpm_begin(true);textEdit.tmpDisp16=0;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ assert(!ppt_bpm_apply() && s->length==before && !song->modified);
+ ppt_bpm_begin(true);textEdit.tmpDisp16=1;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ assert(!ppt_bpm_apply() && s->length==before && !song->modified);
+ assert(!memcmp(saved,&song->sampleData[s->offset],64));
+ ppt_bpm_begin(true);textEdit.tmpDisp16=123;leaveTextEditMode(EDIT_TEXT_NO_UPDATE);
+ assert(!ppt_bpm_apply()); /* canceled edit retains target=1 */
+ ppt_bpm_begin(false);textEdit.tmpDisp16=999;textEdit.cursorBlock=0;
+ ppt_bpm_direction(0);assert(textEdit.tmpDisp16==99);
+ ppt_bpm_direction(1);assert(textEdit.tmpDisp16==999);
+ leaveTextEditMode(EDIT_TEXT_NO_UPDATE);
+ s->length=60000;s->loopStart=0;s->loopLength=2;memset(&song->sampleData[s->offset],0x20,60000);
+ ppt_bpm_begin(false);textEdit.tmpDisp16=200;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ ppt_bpm_begin(true);textEdit.tmpDisp16=100;leaveTextEditMode(EDIT_TEXT_UPDATE);
+ config.maxSampleLength=65534;assert(!ppt_bpm_apply() && s->length==60000);
+ config.maxSampleLength=131070;assert(ppt_bpm_apply() && s->length==120000 && s->loopLength==2);
+ for(int i=0;i<64;i++)assert(song->sampleData[neighbor+i]==0x55);
+ puts("BPM: native UI, 168/170 both directions, loops, metadata, neighbor slot, zero/oversize/cancel OK");
+ }
  ppt_browser_close();SDL_Quit();
  puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
  return 0;
@@ -238,4 +292,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm']:shutil.copy2(t/name,dest/name)

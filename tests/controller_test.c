@@ -897,3 +897,8 @@ int main(void){
   puts("PPT v0.3.12: PT2 v0.3.10 playback + MOD/SAMPLE name carousel OK");
   return 0;
 }
+
+bool ppt_bpm_editing(void){return false;}
+void ppt_bpm_next(void){}
+void ppt_bpm_previous(void){}
+void ppt_bpm_direction(int d){(void)d;}

@@ -4,7 +4,7 @@ import sys, pathlib, shutil, re
 root=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
 main=root/'src'/'pt2_main.c'
 assert main.exists(), f'Not a ProTracker 2 source directory: {root}'
-for name in ['ppt_input.c','ppt_input.h','ppt_effects.h','ppt_views.c','ppt_sample_browser.c','ppt_sample_browser.h','ppt_wav_resample.h']:
+for name in ['ppt_input.c','ppt_input.h','ppt_effects.h','ppt_views.c','ppt_sample_browser.c','ppt_sample_browser.h','ppt_wav_resample.h','ppt_bpm.c','ppt_bpm.h']:
     shutil.copy2(pathlib.Path(__file__).with_name(name),root/'src'/name)
 s=main.read_text()
 if 'ppt_input_init' not in s:
@@ -524,7 +524,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.31: use the native quantized RECORD path for handheld A.
+# PPT 0.3.33: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -663,3 +663,48 @@ void ppt_mod_restore_dialog(const uint32_t *frame)
 }
 '''
     a.write_text(s)
+
+# PPT_SAMPLE_BPM: UI and offline processing; playback/save sources untouched.
+p=root/'src'/'pt2_sampler.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_SAMPLE_BPM_OPEN' not in s and 'void samplerScreen(void)' in s:
+  a='\tui.samplerScreenShown = true;'
+  assert s.count(a)==1
+  s=s.replace(a,a+'\n\t/* PPT_SAMPLE_BPM_OPEN */\n\tui.posEdScreenShown=false;ui.diskOpScreenShown=false;\n\tui.editOpScreenShown=true;ui.editOpScreen=2;displayMainScreen();')
+  p.write_text(s)
+p=root/'src'/'pt2_mouse.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_SAMPLE_BPM_MOUSE' not in s:
+  s='#include "ppt_bpm.h"\n'+s
+  a='static int32_t checkGUIButtons(void)\n{'
+  s=s.replace(a,a+'''
+    /* PPT_SAMPLE_BPM_MOUSE: three compact cells, VOL remains at x213. */
+    if(ui.editOpScreenShown && ui.editOpScreen==2 && !ui.askBoxShown && !ui.editTextFlag &&
+       !ui.diskOpScreenShown && !ui.posEdScreenShown && mouse.y>=88 && mouse.y<=98){
+        if(mouse.x>=120 && mouse.x<156)return PTB_EO_UPSAMP;
+        if(mouse.x>=156 && mouse.x<192)return PTB_EO_DNSAMP;
+        if(mouse.x>=192 && mouse.x<213)return PTB_PPT_BPM_DO;
+    }
+''',1)
+  start=s.index('\t\tcase PTB_EO_UPSAMP:',s.index('static bool handleGUIButtons(int32_t button) //'))
+  end=s.index('\t\tcase PTB_EO_VOL_NUM:',start)
+  s=s[:start]+'\t\tcase PTB_EO_UPSAMP: ppt_bpm_begin(false); return true;\n\t\tcase PTB_EO_DNSAMP: ppt_bpm_begin(true); return true;\n\t\tcase PTB_PPT_BPM_DO: ppt_bpm_apply(); return true;\n\n'+s[end:]
+  p.write_text(s)
+p=root/'src'/'pt2_textedit.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_SAMPLE_BPM_COMMIT' not in s:
+  s='#include "ppt_bpm.h"\n'+s
+  a='\t\t\tcase PTB_SA_FIL_LP_CUTOFF:'
+  assert a in s
+  s=s.replace(a,'\t\t\t/* PPT_SAMPLE_BPM_COMMIT */\n\t\t\tcase PTB_EO_UPSAMP: case PTB_EO_DNSAMP: ppt_bpm_commit(updateValue); break;\n'+a,1)
+  p.write_text(s)
+
+p=root/'src'/'pt2_mouse.h'
+if p.exists():
+ s=p.read_text()
+ if 'PTB_PPT_BPM_DO' not in s:
+  s=s.replace('\tPTB_SA_FIL_HP_CUTOFF\n};','\tPTB_SA_FIL_HP_CUTOFF,\n\tPTB_PPT_BPM_DO\n};',1)
+  p.write_text(s)
