@@ -12,6 +12,7 @@
 #include "pt2_visuals.h"
 #include "pt2_bmp.h"
 #include "ppt_input.h"
+#include "ppt_sample_browser.h"
 
 static uint32_t savedFrame[SCREEN_W * SCREEN_H];
 static bool overlaySaved;
@@ -104,10 +105,13 @@ void ppt_views_begin(void)
     overlaySaved=false;
     const bool full=ppt_full_pattern_active();
     const int row=(!full && !ui.askBoxShown && !ui.editTextFlag)?ppt_disk_selected_row():-1;
-    if(!full && row<0)return;
+    const bool sample=ui.diskOpScreenShown && diskop.mode==DISKOP_MODE_SMP && !ui.askBoxShown && !ui.editTextFlag;
+    if(!full && row<0 && !sample)return;
     memcpy(savedFrame,video.frameBuffer,sizeof(savedFrame));overlaySaved=true;
     if(full){fullscreenPattern();return;}
     /* Solid soft bar only: no contrasting one-pixel underline. */
+    if(sample)ppt_browser_draw();
+    if(row<0){drawNativeMouse();return;}
     const int y=35+row*6;
     const uint32_t bg=video.palette[PAL_BACKGRD];
     for(int yy=y;yy<y+6;yy++)for(int xx=8;xx<303;xx++){

@@ -11,7 +11,7 @@ jobs:
       - name: Install SDL2 and build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libsdl2-dev zip python3 file
+          sudo apt-get install -y build-essential cmake ninja-build libsdl2-dev pkg-config zip python3 file
       - name: Test controller and patch integration
         run: bash tests/check.sh
       - name: Download upstream ProTracker 2 clone 1.92
@@ -20,6 +20,8 @@ jobs:
           cp upstream/LICENSE port/pocket_pro_tracker_pt2/LICENSE-PT2-clone
       - name: Apply PPT controller patch
         run: python3 patch/apply_patch.py upstream
+      - name: Test native WAV preview and import
+        run: python3 tests/check_native_browser.py upstream
       - name: Build original PT2 renderer/audio + PPT input
         run: |
           cmake -S upstream -B upstream/build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -32,7 +34,7 @@ jobs:
           sed -i 's/^64K_LIMIT=.*/64K_LIMIT=FALSE/' port/pocket_pro_tracker_pt2/protracker.ini
           sed -i 's/^STEREOSEPARATION=.*/STEREOSEPARATION=0/' port/pocket_pro_tracker_pt2/protracker.ini
           cat >> port/pocket_pro_tracker_pt2/protracker.ini <<'EOF'
-          ; PPT v0.3.26: XCOPY palette, four-channel VU meters hidden
+          ; PPT v0.3.27: XCOPY palette, four-channel VU meters hidden
           VIDEOSCALE=1X
           FULLSCREEN=TRUE
           FULLSCREENSTRETCH=TRUE
@@ -53,5 +55,5 @@ jobs:
           echo "XCOPY palette and no-channel-VU patch validated in PortMaster artifact"
       - uses: actions/upload-artifact@v4
         with:
-          name: PPT_v0.3.26_Sampler_Range_ResampleNote_ARM64
+          name: PPT_v0.3.27_Sampler_Range_ResampleNote_ARM64
           path: pocket_pro_tracker_pt2.zip

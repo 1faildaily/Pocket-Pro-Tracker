@@ -63,6 +63,12 @@ void samplerSamCopy(void){samplerNewSlots++;samplerShiftWasHeld=keyb.shiftPresse
 void displaySample(void){samplerRangeRenders++;}
 void updateSamplePos(void){samplerPosUpdates++;}
 void displayErrorMsg(const char *s){(void)s;samplerErrs++;}
+static int browserPreviews;
+bool ppt_browser_sample_mode(void){return ui.diskOpScreenShown;}
+void ppt_browser_update(void){}
+void ppt_browser_close(void){}
+void ppt_browser_preview(void){browserPreviews++;}
+bool ppt_browser_import_dialog(void){return false;}
 static int diskMoves,diskActivations;
 void ppt_disk_move(int d){diskMoves+=d;}
 void ppt_disk_activate(void){diskActivations++;}
@@ -96,6 +102,7 @@ int main(void){
   directionAction(1);assert(diskMoves==1);
   buttonEvent(PPT_BTN_A,true);releaseButton(PPT_BTN_A);
   assert(diskActivations==1 && eventsPushed==eventCount);
+  buttonEvent(PPT_BTN_B,true);releaseButton(PPT_BTN_B);assert(browserPreviews==1);
   video.window=(SDL_Window*)1;
   buttonEvent(PPT_BTN_X,true);assert(mouseDownForwarded[PPT_BTN_X]);
   releaseButton(PPT_BTN_X);assert(eventsPushed==eventCount+2);

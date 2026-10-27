@@ -46,3 +46,7 @@ void SDL_WarpMouseInWindow(SDL_Window*,int,int);
 
 #define TEXT_EDIT_STRING 0
 #define EDIT_TEXT_UPDATE 1
+#ifndef SDLK_LEFT
+#define SDLK_LEFT 1073741904
+#define SDLK_RIGHT 1073741903
+#endif

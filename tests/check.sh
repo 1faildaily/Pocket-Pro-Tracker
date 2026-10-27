@@ -36,16 +36,21 @@ root=Path.cwd()
 with tempfile.TemporaryDirectory() as tmp:
  p=Path(tmp);(p/'src').mkdir()
  (p/'src/pt2_main.c').write_text('#include "pt2_keyboard.h"\nvoid f(){\n\tloadConfig();\n\tSDL_EventState(SDL_DROPFILE, SDL_ENABLE);\n\twhile (1) {\n\t\thandleInput();\n\t}\n\tcleanUp();\n\tSDL_Quit();\n\n\treturn 0;\n}\n')
- (p/'src/pt2_askbox.c').write_text('#include "pt2_askbox.h"\nvoid f(){\n\t\treadMouseXY();\n}\n')
+ (p/'src/pt2_askbox.c').write_text('#include "pt2_askbox.h"\nvoid f(){\n\t\treadMouseXY();\n\t\tcase ASKBOX_DOWNSAMPLE:\n\t\t\t\t// abort (escape key)\n}\n')
  (p/'src/pt2_replayer.c').write_text('#include "pt2_visuals_sync.h"\nstatic void updateUIPositions(void)\n{\n\tif (editor.mod2WavOngoing || editor.pat2SmpOngoing)\n\t\treturn;\n\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;\n}\nstatic void nextPosition(void)\n{\n\t\tmodPos = (modPos + 1) & 127;\n\t\tif (modPos >= song->header.songLength) {}\n\t\tmodPattern = (int8_t)song->header.patternTable[modPos];\n\t\tif (modPattern > MAX_PATTERNS-1) {}\n}\n')
  (p/'src/pt2_pattern_viewer.c').write_text((root/'tests/fixtures/pt2_pattern_viewer_sample.c').read_text())
  (p/'src/pt2_posed.c').write_text((root/'tests/fixtures/pt2_position_editor_sample.c').read_text())
  (p/'src/pt2_visuals.c').write_text((root/'tests/fixtures/pt2_visuals_vu_sample.c').read_text())
- (p/'src/pt2_diskop.c').write_text('#include "pt2_diskop.h"\nstatic fileEntry_t *diskOpEntry;\nvoid freeDiskOpEntryMem(void)\n{\n}\n')
+ (p/'src/pt2_diskop.c').write_text('#include "pt2_diskop.h"\nstatic fileEntry_t *diskOpEntry;\n\t\t\t\tloadSample(filePath, diskOpGetAnsiEntry(fileEntryRow));\nvoid freeDiskOpEntryMem(void)\n{\n}\n')
+ (p/'src/pt2_audio.c').write_text('void f(){\n\taudio.callbackOngoing = false;\n\n\t(void)userdata;\n}\n')
+ (p/'src/pt2_askbox.h').write_text('enum {\n\tASKBOX_NUM,\n};\n')
  (p/'src/pt2_sampler.c').write_text('void samplerLoopToggle(void)\n{\n\tif (s->loopStart+s->loopLength > 2) {}\n\telse\n\t{\n\t\tif (sampler.tmpLoopStart == 0 && sampler.tmpLoopLength == 0)\n\t\t{\n\t\t\ts->loopStart = 0;\n\t\t\ts->loopLength = s->length;\n\t\t}\n\t}\n}\n')
  (p/'src/pt2_edit.c').write_text('static void jamAndPlaceSample(SDL_Scancode scancode, bool normalMode){\n int8_t noteVal = normalMode ? keyToNote(scancode) : pNoteTable[editor.currSample];\n if (normalMode || editor.pNoteFlag != 0) {}\n}\nvoid handleEditKeys(SDL_Scancode scancode, bool normalMode){\n jamAndPlaceSample(scancode, normalMode);\n jamAndPlaceSample(scancode, normalMode);\n}\n')
  for _ in range(2):subprocess.run(['python3',str(root/'patch/apply_patch.py'),str(p)],check=True)
  assert (p/'src/ppt_views.c').exists()
+ assert (p/'src/pt2_audio.c').read_text().count('ppt_browser_mix((int16_t *)stream, len / 4);')==1
+ assert (p/'src/pt2_askbox.c').read_text().count('case ASKBOX_PPT_WAV_IMPORT:')==1
+ assert 'ppt_browser_import(filePath' in (p/'src/pt2_diskop.c').read_text()
  assert (p/'src/pt2_visuals.c').read_text().count('ppt_views_begin();')==1
  assert (p/'src/pt2_visuals.c').read_text().count('ppt_views_end();')==1
  assert (p/'src/pt2_diskop.c').read_text().count('PPT_DISK_SELECTION')==1
@@ -153,3 +158,5 @@ assert "grep -qx 'STEREOSEPARATION=0'" in w
 assert "grep -qx '64K_LIMIT=FALSE'" in w
 print('Default MONO, 128KB packaging and MENU+X removal verified')
 PY_MONO
+gcc -std=c11 -Wall -Wextra -Werror tests/resample_test.c -lm -o /tmp/ppt_resample_tests
+/tmp/ppt_resample_tests

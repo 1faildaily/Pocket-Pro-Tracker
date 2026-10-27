@@ -4,7 +4,7 @@ import sys, pathlib, shutil, re
 root=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
 main=root/'src'/'pt2_main.c'
 assert main.exists(), f'Not a ProTracker 2 source directory: {root}'
-for name in ['ppt_input.c','ppt_input.h','ppt_effects.h','ppt_views.c']:
+for name in ['ppt_input.c','ppt_input.h','ppt_effects.h','ppt_views.c','ppt_sample_browser.c','ppt_sample_browser.h','ppt_wav_resample.h']:
     shutil.copy2(pathlib.Path(__file__).with_name(name),root/'src'/name)
 s=main.read_text()
 if 'ppt_input_init' not in s:
@@ -428,3 +428,82 @@ void ppt_disk_activate(void)
 }
 '''
         disk.write_text(ds)
+
+# PPT 0.3.27 WAV sample browser. Preview is mixed only into the device callback,
+# never outputAudio()/MOD2WAV or the replayer/Paula sample engine.
+audio=root/'src'/'pt2_audio.c'
+if audio.exists():
+    au=audio.read_text()
+    if 'ppt_browser_mix((int16_t *)stream' not in au:
+        au='#include "ppt_sample_browser.h"\n'+au
+        anchor='\taudio.callbackOngoing = false;\n\n\t(void)userdata;'
+        assert au.count(anchor)==1, 'Audio callback anchor changed'
+        au=au.replace(anchor,'\tppt_browser_mix((int16_t *)stream, len / 4);\n'+anchor,1)
+        audio.write_text(au)
+# All native DISK-OP WAV clicks also take the same import confirmation path.
+ds=disk.read_text()
+if 'ppt_browser_import(filePath' not in ds:
+    anchor='\t\t\t\tloadSample(filePath, diskOpGetAnsiEntry(fileEntryRow));'
+    assert ds.count(anchor)==1, 'Native sample import anchor changed'
+    ds='#include "ppt_sample_browser.h"\n'+ds
+    ds=ds.replace(anchor,'\t\t\t\tif (!ppt_browser_import(filePath, diskOpGetAnsiEntry(fileEntryRow)))\n'+anchor,1)
+    disk.write_text(ds)
+# Native modal dialog owns input/quit handling; arrows select, A confirms, B cancels.
+ah=root/'src'/'pt2_askbox.h'
+if ah.exists():
+    hs=ah.read_text()
+    if 'ASKBOX_PPT_WAV_IMPORT' not in hs:
+        assert hs.count('\tASKBOX_NUM,')==1
+        hs=hs.replace('\tASKBOX_NUM,','\tASKBOX_PPT_WAV_IMPORT,\n\tASKBOX_NUM,',1)
+        ah.write_text(hs)
+ask=root/'src'/'pt2_askbox.c'
+s=ask.read_text()
+if 'case ASKBOX_PPT_WAV_IMPORT:' not in s:
+    s='#include <stdio.h>\n#include "ppt_sample_browser.h"\n#include "pt2_paula.h"\n#include "pt2_tables.h"\n#include "pt2_config.h"\n'+s
+    anchor='\t\tcase ASKBOX_DOWNSAMPLE:'
+    assert s.count(anchor)==1
+    custom=r'''
+        case ASKBOX_PPT_WAV_IMPORT:
+        {
+            SET_DIALOG(10, 130, 300, 91);
+            INIT_BUTTONS(3, -1, 24);
+            SET_BUTTON(0, true,  "C-3", SDLK_c, 24, 20, 139, 182, 193);
+            SET_BUTTON(1, false, "B-3", SDLK_b, 35, 160, 299, 182, 193);
+            SET_BUTTON(2, false, "CANCEL", SDLK_ESCAPE, -1, 212, 299, 204, 215);
+            drawDialog(&d);
+            textOut2(20, 136, "PRESERVE SPEED AT NOTE");
+            char line[40];
+            snprintf(line,sizeof(line),"%.2f HZ",PAULA_PAL_CLK/periodTable[24]);
+            textOut2(20, 149, line);
+            snprintf(line,sizeof(line),"%.2f HZ",PAULA_PAL_CLK/periodTable[35]);
+            textOut2(160, 149, line);
+            snprintf(line,sizeof(line),"%d BYTES",ppt_browser_target_length(24));
+            textOut2(20, 162, line);
+            snprintf(line,sizeof(line),"%d BYTES",ppt_browser_target_length(35));
+            textOut2(160, 162, line);
+            snprintf(line,sizeof(line),"MAX %d BYTES",config.maxSampleLength);
+            textOut2(20, 207, line);
+        }
+        break;
+'''
+    s=s.replace(anchor,custom+anchor,1)
+    anchor='\t\t\t\t// abort (escape key)'
+    assert s.count(anchor)==1
+    key=r'''
+                if (dialogType == ASKBOX_PPT_WAV_IMPORT &&
+                    (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN))
+                {
+                    d.defaultReturnValue=(key == SDLK_LEFT || key == SDLK_UP)?24:35;
+                    for (int i=0;i<2;i++)
+                    {
+                        button_t *b=&d.buttons[i];
+                        if (b->returnValue==d.defaultReturnValue)
+                            drawButton2(b->x1,b->y1,b->x2-b->x1+1,b->y2-b->y1+1,b->text);
+                        else
+                            drawButton1(b->x1,b->y1,b->x2-b->x1+1,b->y2-b->y1+1,b->text);
+                    }
+                    continue;
+                }
+'''
+    s=s.replace(anchor,key+anchor,1)
+    ask.write_text(s)
