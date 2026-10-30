@@ -130,7 +130,7 @@ void pptQaPositionEditing046(void){
  pptQaCheckPosition(4,false);assert(editor.playMode==PLAY_MODE_NORMAL);
  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
  memset(editor.muted,0,sizeof(editor.muted));
- /* v0.3.47: new mute mapping and one-action masked copy into APPEND. */
+ /* v0.3.48: new mute mapping and one-action masked copy into APPEND. */
  memset(song->header.patternTable,0,sizeof(song->header.patternTable));
  for(int pat=0;pat<MAX_PATTERNS;pat++)memset(song->patterns[pat],0,256*sizeof(note_t));
  posEdClearNames();song->header.songLength=3;

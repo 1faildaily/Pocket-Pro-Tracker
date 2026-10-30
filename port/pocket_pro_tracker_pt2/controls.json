@@ -51,5 +51,123 @@
       "logical": 308,
       "raw": 306
     }
-  ]
+  ],
+  "profiles": {
+    "andromeda": {
+      "device_name": "muOS-Keys",
+      "buttons": {
+        "A": 304,
+        "B": 305,
+        "X": 307,
+        "Y": 308,
+        "SELECT": 314,
+        "START": 315,
+        "L1": 310,
+        "L2": 312,
+        "R1": 311,
+        "R2": 313,
+        "MENU": 316,
+        "L3": 317,
+        "R3": 318
+      },
+      "axes": {
+        "DPAD_UP": {
+          "event_type": 3,
+          "code": 17,
+          "minimum": -1,
+          "maximum": 1,
+          "neutral": 0,
+          "sign": -1
+        },
+        "DPAD_DOWN": {
+          "event_type": 3,
+          "code": 17,
+          "minimum": -1,
+          "maximum": 1,
+          "neutral": 0,
+          "sign": 1
+        },
+        "DPAD_LEFT": {
+          "event_type": 3,
+          "code": 16,
+          "minimum": -1,
+          "maximum": 1,
+          "neutral": 0,
+          "sign": -1
+        },
+        "DPAD_RIGHT": {
+          "event_type": 3,
+          "code": 16,
+          "minimum": -1,
+          "maximum": 1,
+          "neutral": 0,
+          "sign": 1
+        },
+        "LEFT_STICK_LEFT": {
+          "event_type": 3,
+          "code": 0,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 55,
+          "sign": -1
+        },
+        "LEFT_STICK_RIGHT": {
+          "event_type": 3,
+          "code": 0,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 55,
+          "sign": 1
+        },
+        "LEFT_STICK_UP": {
+          "event_type": 3,
+          "code": 1,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 167,
+          "sign": -1
+        },
+        "LEFT_STICK_DOWN": {
+          "event_type": 3,
+          "code": 1,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 167,
+          "sign": 1
+        },
+        "RIGHT_STICK_LEFT": {
+          "event_type": 3,
+          "code": 3,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 0,
+          "sign": -1
+        },
+        "RIGHT_STICK_RIGHT": {
+          "event_type": 3,
+          "code": 3,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 0,
+          "sign": 1
+        },
+        "RIGHT_STICK_UP": {
+          "event_type": 3,
+          "code": 4,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 0,
+          "sign": -1
+        },
+        "RIGHT_STICK_DOWN": {
+          "event_type": 3,
+          "code": 4,
+          "minimum": -32767,
+          "maximum": 32767,
+          "neutral": 0,
+          "sign": 1
+        }
+      }
+    }
+  }
 }

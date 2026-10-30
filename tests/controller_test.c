@@ -933,7 +933,7 @@ int main(void){
   assert(editor.playMode==PLAY_MODE_NORMAL && playPos==3 && !ppt_position_pattern_active());
   startPlayback(PPT_PLAY_SONG);
   puts("POSITION clipboard: selected range, loop-clear retention, shifted insertion, playback/full guards OK");
-  /* v0.3.47: POSITION actions must never edit hidden pattern data. */
+  /* v0.3.48: POSITION actions must never edit hidden pattern data. */
   static note_t posPatterns[MAX_PATTERNS][256],beforePatterns[MAX_PATTERNS][256];
   for(int p=0;p<MAX_PATTERNS;p++)song->patterns[p]=posPatterns[p];
   memset(posPatterns,0,sizeof(posPatterns));memset(qaNames,0,sizeof(qaNames));
@@ -1054,7 +1054,7 @@ int main(void){
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
   assert(!ppt_position_detached() && !posAppend && !ppt_live_edit_active());
   editor.songPlaying=false;
-  puts("POSITION v0.3.47: isolated editing, deletion, mute chords, masked/new snapshots, rollback and detached launch OK");
+  puts("POSITION v0.3.48: isolated editing, deletion, mute chords, masked/new snapshots, rollback and detached launch OK");
 
   char patternName[16];memset(patternName,'a',15);patternName[15]=0;
   ui.editTextFlag=true;textEdit.type=TEXT_EDIT_STRING;textEdit.object=PTB_PE_PATTNAME;
@@ -1063,6 +1063,55 @@ int main(void){
   assert(currentNameEdit(NULL));nameCycle(1);
   assert(textEdit.textPtr==patternName+14 && patternName[15]==0);
   nameFinish();assert(!ui.editTextFlag);
+  /* Replay controls measured by the user's tester on muOS 2606.0. */
+  #include "andromeda_fixture.h"
+  assert(isAndromedaPad("muOS-Keys") && !isAndromedaPad("axp2202-pek") && !isAndromedaPad(NULL));
+  andromedaProfile=true;
+  for(unsigned i=0;i<sizeof(measuredButtons)/sizeof(measuredButtons[0]);i++)
+    assert(buttonFromRaw(measuredButtons[i].raw)==measuredButtons[i].button);
+  assert(buttonFromRaw(306)==-1 && buttonFromRaw(309)==-1 && buttonFromRaw(KEY_MENU)==-1);
+  memset(held,0,sizeof(held));memset(dir,0,sizeof(dir));memset(axis,0,sizeof(axis));
+  ui.posEdScreenShown=ui.diskOpScreenShown=ui.samplerScreenShown=ui.editOpScreenShown=false;
+  ui.askBoxShown=ui.editTextFlag=false;fullPattern=false;editor.songPlaying=false;editor.currMode=MODE_IDLE;
+  song->currPattern=0;song->currRow=0;cursor.channel=0;cursor.pos=0;editor.currSample=10;
+  buttonEvent(buttonFromRaw(312),true);releaseButton(buttonFromRaw(312));
+  assert(editor.currSample==9 && !ppt_full_pattern_active());
+  buttonEvent(buttonFromRaw(313),true);releaseButton(buttonFromRaw(313));
+  assert(editor.currSample==10 && !editor.songPlaying);
+  buttonEvent(buttonFromRaw(316),true);releaseButton(buttonFromRaw(316));
+  assert(!ppt_full_pattern_active()); /* MENU must never alias R3. */
+  buttonEvent(buttonFromRaw(318),true);releaseButton(buttonFromRaw(318));assert(ppt_full_pattern_active());
+  buttonEvent(buttonFromRaw(318),true);releaseButton(buttonFromRaw(318));assert(!ppt_full_pattern_active());
+  video.window=(SDL_Window *)1;int beforeMouseEvents=eventsPushed;
+  buttonEvent(buttonFromRaw(308),true);releaseButton(buttonFromRaw(308));
+  assert(eventsPushed==beforeMouseEvents+2 && lastEvent.button.button==SDL_BUTTON_RIGHT && song->currPattern==0);
+  video.window=NULL;
+  buttonEvent(buttonFromRaw(317),true);releaseButton(buttonFromRaw(317));
+  assert(editor.songPlaying && editor.currMode==MODE_RECORD);
+  buttonEvent(buttonFromRaw(315),true);releaseButton(buttonFromRaw(315));assert(!editor.songPlaying);
+  memset(editor.muted,0,sizeof(editor.muted));
+  buttonEvent(buttonFromRaw(314),true);buttonEvent(buttonFromRaw(313),true);
+  releaseButton(buttonFromRaw(313));releaseButton(buttonFromRaw(314));assert(editor.muted[2] && editor.currSample==10);
+  buttonEvent(buttonFromRaw(314),true);buttonEvent(buttonFromRaw(311),true);
+  releaseButton(buttonFromRaw(311));releaseButton(buttonFromRaw(314));assert(editor.muted[3] && song->currPattern==0);
+  for(int i=0;i<6;i++)axis[i]=(axis_t){.min=-32767,.max=32767,.valid=true,.seen=true};
+  mousePosX=160;mousePosY=127;mouseFracX=mouseFracY=0;
+  axis[ABS_X].value=32767;updateAnalogMouse();assert(mousePosX>160 && mousePosY==127);
+  axis[ABS_X].value=0;axis[ABS_Y].value=-32767;updateAnalogMouse();assert(mousePosY<127);
+  axis[ABS_Y].value=0;int oldX=mousePosX,oldY=mousePosY;
+  axis[ABS_RX].value=-32767;rightStickArmed=true;updateAnalogMouse();assert(mousePosX==oldX && mousePosY==oldY);
+  updateRightStickViews();assert(ui.posEdScreenShown);
+  axis[ABS_RX].value=0;updateRightStickViews();axis[ABS_RX].value=32767;updateRightStickViews();assert(!ui.posEdScreenShown);
+  axis[ABS_RX].value=0;updateRightStickViews();axis[ABS_RY].value=-32767;updateRightStickViews();assert(ui.diskOpScreenShown);
+  axis[ABS_RY].value=0;updateRightStickViews();axis[ABS_RY].value=32767;updateRightStickViews();assert(ui.samplerScreenShown);
+  ui.samplerScreenShown=false;ui.diskOpScreenShown=false;memset(dir,0,sizeof(dir));
+  song->currRow=10;processHatAxis(ABS_HAT0Y,-1);assert(song->currRow==9);processHatAxis(ABS_HAT0Y,0);
+  processHatAxis(ABS_HAT0Y,1);assert(song->currRow==10);processHatAxis(ABS_HAT0Y,0);
+  cursor.pos=1;processHatAxis(ABS_HAT0X,-1);assert(cursor.pos==0);processHatAxis(ABS_HAT0X,0);
+  processHatAxis(ABS_HAT0X,1);assert(cursor.pos==1);processHatAxis(ABS_HAT0X,0);
+  andromedaProfile=false;assert(buttonFromRaw(310)==PPT_BTN_SELECT && buttonFromRaw(316)==PPT_BTN_R3);
+  puts("Andromeda: measured 13 buttons, MENU/R3 separation, sample selection, RECORD, START, mute, both sticks and D-pad OK; legacy retained");
+
   return 0;
 }
 

@@ -1,4 +1,30 @@
-# Pocket Pro Tracker v0.3.47 — kopiowanie i mute
+# Pocket Pro Tracker v0.3.48 — sterowanie muOS Andromeda
+
+Poprawka na podstawie kompletnego pliku z PPT Input Mapper: RG35XX Pro, muOS 2606.0 Andromeda, SDL 2.28.5, kontroler muOS-Keys. Wszystkie 25 kroków miało status OK.
+
+Program automatycznie wykrywa muOS-Keys po nazwie urządzenia evdev, niezależnie od numeru event. W tym profilu używa wyłącznie tego kontrolera; wejście przycisku zasilania i innych urządzeń nie nadpisuje osi. Skanowane są event0–event63. Gdy muOS-Keys nie występuje, pozostaje dotychczasowy profil Jacarandy. Nazwa profilu i wybrany event są w ppt_input.log.
+
+| Przycisk | Andromeda: kod evdev |
+|---|---:|
+| A / B / X / Y | 304 / 305 / 307 / 308 |
+| SELECT / START | 314 / 315 |
+| L1 / L2 | 310 / 312 |
+| R1 / R2 | 311 / 313 |
+| MENU | 316 |
+| Klik lewego / prawego analoga | 317 / 318 |
+
+Lewy analog: ABS_X (0) poziom i ABS_Y (1) pion. Prawy: ABS_RX (3) poziom i ABS_RY (4) pion. Kierunki standardowe: ujemne = lewo/góra, dodatnie = prawo/dół. Zakresy osi są odczytywane z urządzenia. D-pad pozostaje na ABS_HAT0X (16) i ABS_HAT0Y (17). Zachowane dotychczasowe prędkości, deadzone oraz próg maksymalnego wychylenia prawego analoga.
+
+W profilu Andromedy wyłączone są stare aliasy klawiszy: kod 316 to MENU, 312 to L2, 313 to R2. Nie są już interpretowane jako R3, MENU ani L3. Funkcje przycisków i wszystkie skróty v0.3.47 pozostają takie same, w tym SELECT+R2 mute 3, SELECT+R1 mute 4 i MENU+A tworzące oraz wstawiające nowe kopie.
+
+Nie trzeba kopiować diagnostycznego INI do folderu PPT. Wymagana jest nowa kompilacja ARM64: podmień pliki wraz z .github → Commit → Push → artefakt PPT_v0.3.48_Andromeda_Input_ARM64.
+
+Zmiana dotyczy obsługi wejścia. Replayer, audio, Paula, zapis MOD i importer WAV bez zmian względem v0.3.47. Obsługa Bluetooth audio nie jest częścią tej poprawki.
+
+Testy odtwarzają zmierzone kody: MENU/R3 bez konfliktu, Y jako prawy klik, L2/R2 sample, L3 RECORD, START stop, SELECT+ramiona mute, lewy analog jako mysz, wszystkie cztery widoki prawego analoga i cztery kierunki D-pada. Wcześniejsze testy Jacarandy pozostają aktywne. Kalibracja bez śladu surowych zdarzeń znajduje się w tests/andromeda_calibration.json.
+
+## Zachowane funkcje v0.3.47
+
 
 POSITION-ED ma oddzielne sterowanie: A oraz A+D-pad nie wpisują nut ani efektów w ukrytym patternie, L3 nie włącza RECORD, a klawiaturowa edycja patternu jest w tym widoku zablokowana. Lista jest przesunięta o 2 px w dół, łącznie z karuzelą nazw i obsługą myszy.
 
@@ -41,7 +67,7 @@ Format MOD, natywna funkcja modSave, Paula i efekty odtwarzania bez zmian. W pt2
 
 Testy kontrolera obejmują blokadę ukrytej edycji, obie kolejności A+B, przesunięcie listy, mute, kopie z nowymi numerami i maską kanałów, ochronę źródeł i brak częściowego wklejenia przy braku miejsca. Test natywny sprawdza niezależny kursor podczas prawdziwego przechodzenia SONG i loopa oraz SAVE/LOAD usuniętego patternu 99. Fizyczny Anbernic wymaga sprawdzenia po buildzie ARM64.
 
-Podmień pliki wraz z .github → Commit → Push → artefakt PPT_v0.3.47_Position_Copy_OneStep_ARM64.
+Podmień pliki wraz z .github → Commit → Push → artefakt PPT_v0.3.48_Andromeda_Input_ARM64.
 
 ## Zachowane funkcje poprzedniej wersji
 
