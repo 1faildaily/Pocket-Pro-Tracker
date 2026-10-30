@@ -130,6 +130,39 @@ void pptQaPositionEditing046(void){
  pptQaCheckPosition(4,false);assert(editor.playMode==PLAY_MODE_NORMAL);
  buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
  memset(editor.muted,0,sizeof(editor.muted));
+ /* v0.3.47: new mute mapping and one-action masked copy into APPEND. */
+ memset(song->header.patternTable,0,sizeof(song->header.patternTable));
+ for(int pat=0;pat<MAX_PATTERNS;pat++)memset(song->patterns[pat],0,256*sizeof(note_t));
+ posEdClearNames();song->header.songLength=3;
+ song->header.patternTable[0]=20;song->header.patternTable[1]=21;song->header.patternTable[2]=20;
+ strcpy(ppt_pattern_name(20),"SECTION");
+ for(int pat=20;pat<=21;pat++)for(int ch=0;ch<4;ch++)
+   song->patterns[pat][ch]=(note_t){.period=428,.sample=(uint8_t)(ch+1),.command=0xA,.param=16};
+ note_t original[2][256];memcpy(original[0],song->patterns[20],sizeof(original[0]));memcpy(original[1],song->patterns[21],sizeof(original[1]));
+ ppt_position_set_cursor(0);beginPosMark();movePosMark(1);confirmPosMark();
+ ppt_position_set_cursor(3);
+ buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_R2,true);
+ releaseButton(PPT_BTN_R2);releaseButton(PPT_BTN_SELECT);
+ assert(editor.muted[2] && !editor.muted[3]);
+ buttonEvent(PPT_BTN_SELECT,true);buttonEvent(PPT_BTN_R1,true);
+ releaseButton(PPT_BTN_R1);releaseButton(PPT_BTN_SELECT);
+ assert(editor.muted[2] && editor.muted[3] && !editor.muted[0] && !editor.muted[1]);
+ buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_A,true);
+ releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_MENU);
+ assert(song->header.songLength==5 && song->header.patternTable[2]==20);
+ for(int i=0;i<2;i++){
+   int dst=song->header.patternTable[3+i];assert(dst!=20 && dst!=21);
+   for(int ch=0;ch<4;ch++){
+     note_t *v=&song->patterns[dst][ch];
+     if(ch<2)assert(v->period==428 && v->sample==ch+1 && v->command==0xA && v->param==16);
+     else assert(!v->period && !v->sample && !v->command && !v->param);
+   }
+   assert(!memcmp(original[i],song->patterns[20+i],sizeof(original[i])));
+ }
+ assert(song->header.patternTable[3]!=song->header.patternTable[4]);
+ assert(!strcmp(ppt_pattern_name(song->header.patternTable[3]),"SECTION"));
+ memset(editor.muted,0,sizeof(editor.muted));
+ puts("POSITION 047: R2 channel 3, R1 channel 4, MENU+A masked copy and insert in one action OK");
  /* Actual DELETE + SAVE + LOAD: high pattern data retained without changing saver. */
  memset(song->header.patternTable,0,sizeof(song->header.patternTable));song->header.songLength=2;
  song->header.patternTable[0]=99;song->header.patternTable[1]=5;

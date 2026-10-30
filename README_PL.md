@@ -1,4 +1,4 @@
-# Pocket Pro Tracker v0.3.46 — edycja POSITION-ED
+# Pocket Pro Tracker v0.3.47 — kopiowanie i mute
 
 POSITION-ED ma oddzielne sterowanie: A oraz A+D-pad nie wpisują nut ani efektów w ukrytym patternie, L3 nie włącza RECORD, a klawiaturowa edycja patternu jest w tym widoku zablokowana. Lista jest przesunięta o 2 px w dół, łącznie z karuzelą nazw i obsługą myszy.
 
@@ -10,7 +10,7 @@ POSITION-ED ma oddzielne sterowanie: A oraz A+D-pad nie wpisują nut ani efektó
 | D-pad lewo/prawo | Numer patternu −1/+1; na APPEND tworzy pozycję |
 | A+B lub B+A | Usuń pojedynczy wpis, przesuń resztę w górę |
 | SELECT+B, D-pad, B | Zaznacz zakres, skopiuj pozycje i ustaw loop |
-| MENU+A po zaznaczeniu | Przygotuj kopię do nowych pustych patternów |
+| MENU+A po zatwierdzeniu zaznaczenia | Utwórz nowe patterny z aktywnych kanałów i od razu wstaw przy kursorze |
 | SELECT+A | Wklej przed kursorem albo na APPEND, przesuwając dalsze wpisy |
 | Y / SELECT+Y | Usuń zaznaczenie i loop, zachowaj schowek |
 | SELECT | Podczas odtwarzania: swobodny kursor / powrót do śledzenia |
@@ -27,9 +27,9 @@ Usuwanie nie kasuje danych ani nazw patternów. Usunięty numer pozostaje tuż z
 
 ## Kanały i kopiowanie
 
-SELECT+L1 = kanał 1; SELECT+L2 = kanał 2; SELECT+R1 = kanał 3; SELECT+R2 = kanał 4. To ten sam mute co oryginalne przyciski PT2, działa także podczas odtwarzania. W głównym oknie pozostają natywne oznaczenia, w POSITION-ED status pokazuje 1+/2+/3+/4+ lub czerwone X, a w dużym PATTERN-ED są wskaźniki 1–4. Mute nie zmienia nut ani efektów w źródle.
+SELECT+L1 = kanał 1; SELECT+L2 = kanał 2; SELECT+R2 = kanał 3; SELECT+R1 = kanał 4. To ten sam mute co oryginalne przyciski PT2, działa także podczas odtwarzania. W głównym oknie pozostają natywne oznaczenia, w POSITION-ED status pokazuje 1+/2+/3+/4+ lub czerwone X, a w dużym PATTERN-ED są wskaźniki 1–4. Mute nie zmienia nut ani efektów w źródle.
 
-Zwykła kopia pozycji z wszystkimi aktywnymi kanałami zachowuje numery patternów. Jeśli podczas kopiowania któryś kanał jest wyciszony, schowek przygotowuje nowe patterny zawierające tylko aktywne kanały. MENU+A wymusza nowe patterny także przy wszystkich kanałach aktywnych. Najpierw zaznacz zakres; MENU+A może zatwierdzić trwające zaznaczenie albo użyć nadal zaznaczonego zakresu. Wklejanie zawsze SELECT+A.
+Zwykła kopia pozycji z wszystkimi aktywnymi kanałami zachowuje numery patternów. Jeśli podczas kopiowania któryś kanał jest wyciszony, schowek przygotowuje nowe patterny zawierające tylko aktywne kanały. MENU+A wymusza nowe patterny także przy wszystkich kanałach aktywnych i natychmiast je wstawia przy kursorze. Najpierw zaznacz zakres i zatwierdź go przyciskiem B, następnie ustaw miejsce docelowe (także APPEND) i naciśnij MENU+A. Osobne SELECT+A nie jest potrzebne. Wyciszenie kanałów jest odczytywane w chwili MENU+A. SELECT+A pozostaje osobnym skrótem wklejenia schowka.
 
 Dla nowych patternów kopia zapisuje nuty, sample, FX i nazwy w chwili kopiowania. Zmiana mute po skopiowaniu nie zmienia zawartości schowka. Wyciszone kanały są całkiem puste w nowych kopiach. Każdy zaznaczony wpis otrzymuje osobny nowy pattern, nawet jeśli źródłowe numery się powtarzają. Cztery wpisy dają cztery nowe patterny; nie jest to stały limit liczby kopii.
 
@@ -41,7 +41,7 @@ Format MOD, natywna funkcja modSave, Paula i efekty odtwarzania bez zmian. W pt2
 
 Testy kontrolera obejmują blokadę ukrytej edycji, obie kolejności A+B, przesunięcie listy, mute, kopie z nowymi numerami i maską kanałów, ochronę źródeł i brak częściowego wklejenia przy braku miejsca. Test natywny sprawdza niezależny kursor podczas prawdziwego przechodzenia SONG i loopa oraz SAVE/LOAD usuniętego patternu 99. Fizyczny Anbernic wymaga sprawdzenia po buildzie ARM64.
 
-Podmień pliki wraz z .github → Commit → Push → artefakt PPT_v0.3.46_Position_Editing_ARM64.
+Podmień pliki wraz z .github → Commit → Push → artefakt PPT_v0.3.47_Position_Copy_OneStep_ARM64.
 
 ## Zachowane funkcje poprzedniej wersji
 

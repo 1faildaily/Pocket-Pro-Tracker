@@ -933,7 +933,7 @@ int main(void){
   assert(editor.playMode==PLAY_MODE_NORMAL && playPos==3 && !ppt_position_pattern_active());
   startPlayback(PPT_PLAY_SONG);
   puts("POSITION clipboard: selected range, loop-clear retention, shifted insertion, playback/full guards OK");
-  /* v0.3.46: POSITION actions must never edit hidden pattern data. */
+  /* v0.3.47: POSITION actions must never edit hidden pattern data. */
   static note_t posPatterns[MAX_PATTERNS][256],beforePatterns[MAX_PATTERNS][256];
   for(int p=0;p<MAX_PATTERNS;p++)song->patterns[p]=posPatterns[p];
   memset(posPatterns,0,sizeof(posPatterns));memset(qaNames,0,sizeof(qaNames));
@@ -964,7 +964,7 @@ int main(void){
   posAppend=false;editor.songPlaying=true;deletePosition();assert(song->header.songLength==1);
   editor.songPlaying=false;
   /* Mute is shared with native buttons; no shoulder changes sample or pattern. */
-  const int shoulders[4]={PPT_BTN_L1,PPT_BTN_L2,PPT_BTN_R1,PPT_BTN_R2};
+  const int shoulders[4]={PPT_BTN_L1,PPT_BTN_L2,PPT_BTN_R2,PPT_BTN_R1};
   int sampleBefore=editor.currSample,pattBefore=song->currPattern;
   for(int ch=0;ch<4;ch++){
     buttonEvent(PPT_BTN_SELECT,true);buttonEvent(shoulders[ch],true);
@@ -986,11 +986,12 @@ int main(void){
     posPatterns[p][row*4+ch]=(note_t){.period=(uint16_t)(400+p),.sample=(uint8_t)(ch+1),.command=0xA,.param=(uint8_t)row};
   posPatterns[2][0].period=428;strcpy(qaNames[3],"RESERVED");strcpy(qaNames[9],"INTRO");
   ppt_position_set_cursor(0);beginPosMark();movePosMark(1);movePosMark(1);movePosMark(1);
+  confirmPosMark();ppt_position_set_cursor(1);
+  memcpy(beforePatterns,posPatterns,sizeof(posPatterns));
   buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_A,true);
   releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_MENU);
   assert(!editor.muted[2] && posClipCount==4 && posClipNew && !posMarking);
-  memcpy(beforePatterns,posPatterns,sizeof(posPatterns));
-  ppt_position_set_cursor(1);pastePositionRange();assert(song->header.songLength==9);
+  assert(song->header.songLength==9);
   for(int i=0;i<4;i++){
     int dst=song->header.patternTable[1+i];assert(dst!=0 && dst!=2 && dst!=3);
     for(int j=0;j<5;j++)assert(dst!=sources[j]);
@@ -1003,7 +1004,10 @@ int main(void){
   /* Ordinary copy with mute switches to new snapshots, with full effects omitted. */
   editor.muted[1]=editor.muted[3]=true;ppt_position_set_cursor(0);beginPosMark();confirmPosMark();
   assert(posClipCount==1 && posClipNew);
-  memset(editor.muted,0,sizeof(editor.muted));ppt_position_set_cursor(song->header.songLength);pastePositionRange();
+  ppt_position_set_cursor(song->header.songLength);
+  buttonEvent(PPT_BTN_MENU,true);buttonEvent(PPT_BTN_A,true);
+  releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_MENU);
+  memset(editor.muted,0,sizeof(editor.muted));
   int dst=song->header.patternTable[song->header.songLength-1];assert(dst!=9);
   for(int row=0;row<64;row++)for(int ch=0;ch<4;ch++){
     note_t *v=&posPatterns[dst][row*4+ch];
@@ -1029,19 +1033,28 @@ int main(void){
   startPlayback(PPT_PLAY_PATTERN);
   assert(editor.songPlaying && editor.playMode==PLAY_MODE_NORMAL && playPos==4 && !ppt_position_detached());
   startPlayback(PPT_PLAY_PATTERN);assert(!editor.songPlaying);
-  /* Both orders of MENU+A prepare a copy and never paste or change mute. */
+  /* Reverse MENU+A order also copies AND inserts, exactly once. */
+  memset(posPatterns[90],0,sizeof(posPatterns[90]));qaNames[90][0]=0;
   ppt_position_set_cursor(0);beginPosMark();confirmPosMark();posClipNew=false;
   int unchangedLength=song->header.songLength;
   buttonEvent(PPT_BTN_A,true);buttonEvent(PPT_BTN_MENU,true);
   releaseButton(PPT_BTN_MENU);releaseButton(PPT_BTN_A);
-  assert(posClipNew && song->header.songLength==unchangedLength && !editor.muted[2]);
+  assert(posClipNew && song->header.songLength==unchangedLength+1 && !editor.muted[2]);
+  assert(song->header.patternTable[0]==90);
+  /* No copy before range confirmation, and no structural edits while playing. */
+  beginPosMark();unchangedLength=song->header.songLength;copyNewPositionRange();
+  assert(posMarking && song->header.songLength==unchangedLength && !strcmp(lastStatusMessage,"CONFIRM RANGE"));
+  confirmPosMark();editor.songPlaying=true;copyNewPositionRange();
+  assert(song->header.songLength==unchangedLength && !strcmp(lastStatusMessage,"STOP TO PASTE"));
+  editor.songPlaying=false;clearPosLoop();copyNewPositionRange();
+  assert(song->header.songLength==unchangedLength && !strcmp(lastStatusMessage,"SELECT A RANGE"));
   /* Returning to FOLLOW from APPEND must remove the virtual append cursor. */
   editor.songPlaying=true;editor.playMode=PLAY_MODE_NORMAL;atomic_store(&posDetached,true);
   ppt_position_set_cursor(song->header.songLength);assert(posAppend);
   buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
   assert(!ppt_position_detached() && !posAppend && !ppt_live_edit_active());
   editor.songPlaying=false;
-  puts("POSITION v0.3.46: isolated editing, deletion, mute chords, masked/new snapshots, rollback and detached launch OK");
+  puts("POSITION v0.3.47: isolated editing, deletion, mute chords, masked/new snapshots, rollback and detached launch OK");
 
   char patternName[16];memset(patternName,'a',15);patternName[15]=0;
   ui.editTextFlag=true;textEdit.type=TEXT_EDIT_STRING;textEdit.object=PTB_PE_PATTNAME;
