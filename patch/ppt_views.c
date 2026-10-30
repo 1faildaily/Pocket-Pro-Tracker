@@ -120,6 +120,10 @@ static void fullscreenPattern(void)
     textOut(120,2,"LEN",text);printThreeDecimals(144,2,song->header.songLength,text);
     textOut(184,2,"SMP",text);printTwoHex(208,2,editor.currSample+1,text);
     textOut(240,2,editor.currMode==MODE_RECORD?"REC":ppt_live_edit_active()?"LIVE":"EDIT",text);
+    for(int ch=0;ch<4;ch++){
+        charOut(284+ch*8,2,(char)('1'+ch),video.palette[editor.muted[ch]?PAL_GENTXT:PAL_QADSCP]);
+        if(editor.muted[ch])fillRect(284+ch*8,8,7,1,video.palette[PAL_GENTXT]);
+    }
     const int first=firstVisibleRow(),ghost=ppt_ghost_row(song->currPattern);
     int y=12,currentY=12;
     for(int i=0;i<32;i++){

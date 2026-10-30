@@ -42,3 +42,8 @@ void ppt_position_set_cursor(int pos);
 int ppt_position_first(void);
 
 bool ppt_position_pattern_active(void);
+
+/* POSITION playback marker and free browsing, independent of pattern editing. */
+void ppt_set_position_playhead(int pos);
+int ppt_position_playhead(void);
+bool ppt_position_detached(void);

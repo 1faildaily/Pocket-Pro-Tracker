@@ -101,6 +101,7 @@ if 'ppt_live_edit_active()' not in rs:
     sync=('\t/* PPT LIVE EDIT: snapshot REAL playback position independently of\n'
           '\t   displayed currRow/currPattern; keep audio transport untouched. */\n'
           '\tppt_set_playhead(modPattern, song->row);\n'
+          '\tppt_set_position_playhead(modPos);\n'
           '\tif (ppt_live_edit_active() && !ppt_position_browse_active())\n'
           '\t{\n'
           '\t\tui.updatePatternData = true; /* animate ghost each music row */\n'
@@ -524,7 +525,7 @@ if 'PPT_BROWSER_PATTERN_REFRESH' not in ds:
     ds=ds.replace(anchor,anchor+'\n\tui.updatePatternData=true; /* PPT_BROWSER_PATTERN_REFRESH: restore after leaving sample mode. */',1)
     disk.write_text(ds)
 
-# PPT 0.3.45: use the native quantized RECORD path for handheld A.
+# PPT 0.3.46: use the native quantized RECORD path for handheld A.
 e=root/'src'/'pt2_edit.c'
 es=e.read_text()
 if 'void pptRecordInsertedNote(' not in es:
@@ -608,6 +609,11 @@ void ppt_disk_draw_full(void)
     textOut(8,235,"SONGNAME:",video.palette[PAL_GENTXT]);
     for(int i=0;i<20;i++)charOut(104+i*8,235,song->header.name[i]?song->header.name[i]:'_',video.palette[PAL_GENTXT]);
     drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
+ /* Mute state remains visible with the native main-screen controls covered. */
+ for(int ch=0;ch<4;ch++){
+  char label[3]={(char)('1'+ch),editor.muted[ch]?'X':'+',0};
+  textOutBg(244+ch*18,247,label,video.palette[editor.muted[ch]?PAL_GENTXT:PAL_QADSCP],video.palette[PAL_GENBKG]);
+ }
 }
 '''
     disk.write_text(ds)
@@ -724,10 +730,13 @@ void ppt_position_draw_full(void){
  drawFramework1(120,22,188,222);
  drawFramework1(308,99,12,145);
  for(int i=0;i<31;i++){
-  int pos=first+i,y=23+i*7;if(pos>song->header.songLength || pos>=128)break;
+  int pos=first+i,y=25+i*7;if(pos>song->header.songLength || pos>=128)break;
   int style=ppt_loop_entry_style(pos);
-  uint32_t fg=video.palette[pos==current?PAL_GENTXT:PAL_QADSCP];
-  if(pos==current || style)fillRect(128,y,176,7,style?0x555555:0x333333);
+  const bool playing=pos==ppt_position_playhead();
+  uint32_t fg=video.palette[(playing || (!editor.songPlaying && pos==current))?PAL_GENTXT:PAL_QADSCP];
+  if(pos==current || style || playing)fillRect(128,y,176,7,style?0x555555:0x333333);
+  if(pos==current && editor.songPlaying && ppt_position_detached())
+    fillRect(123,y+1,3,3,video.palette[PAL_QADSCP]);
   printThreeDecimals(128,y,pos,fg);
   if(pos==song->header.songLength){textOut(160,y,"+++ APPEND",fg);continue;}
   int pat=song->header.patternTable[pos];printTwoDecimals(160,y,pat,fg);
@@ -736,6 +745,11 @@ void ppt_position_draw_full(void){
     fillRect(184+textEdit.cursorBlock*8,y+5,7,2,video.palette[PAL_TEXTMARK]);
  }
  drawFramework1(0,244,320,11);textOutN(8,247,ui.statusMessage,17,video.palette[PAL_GENTXT]);
+ /* Native main-screen mute buttons are covered; show channel states here. */
+ for(int ch=0;ch<4;ch++){
+  char label[3]={(char)('1'+ch),editor.muted[ch]?'X':'+',0};
+  textOutBg(244+ch*18,247,label,video.palette[editor.muted[ch]?PAL_GENTXT:PAL_QADSCP],video.palette[PAL_GENBKG]);
+ }
 }
 '''
   p.write_text(s)
@@ -749,7 +763,7 @@ if p.exists():
     /* PPT_POSITION_MOUSE: never click hidden native pattern controls. */
     if(ui.posEdScreenShown && !ui.askBoxShown && !ui.editTextFlag && !ui.diskOpScreenShown && mouse.leftButtonPressed){
         if(mouse.x>=120 && mouse.x<308 && mouse.y>=22 && mouse.y<244){int first=ppt_position_first();
-            int pos=first+(mouse.y-23)/7;if(pos<=song->header.songLength){ppt_position_set_cursor(pos);
+            int pos=first+(mouse.y-25)/7;if(pos<=song->header.songLength){ppt_position_set_cursor(pos);
                 if(mouse.x>=184 && pos<song->header.songLength)posEdEditName();}
             return true;}
         if(mouse.y>=99 && mouse.y<244)return true;
@@ -777,7 +791,7 @@ if 'PPT_POSITION_PATTERN_CURSOR' not in s:
  a='\tsong->currRow = song->row;\n\tsong->currPos = modPos;\n\tsong->currPattern = modPattern;'
  assert s.count(a)==1
  s=s.replace(a,'''	/* PPT_POSITION_PATTERN_CURSOR: allow browsing while auditioning one pattern. */
-    if(ppt_position_pattern_active()){
+    if(ppt_position_pattern_active() || (ppt_position_browse_active() && ppt_position_detached())){
         song->currRow=song->row;ui.updatePosEd=true;ui.updatePatternData=true;return;
     }
 '''+a,1)
@@ -790,7 +804,7 @@ if p.exists():
  if 'PPT_POSITION_NAME_CAROUSEL' not in s and 'void posEdEditName(void)' in s:
   a='\t\ttextEdit.cursorStartY = 58;\n\t\ttextEdit.scrollable = true;'
   assert s.count(a)==1
-  s=s.replace(a,'\t\t/* PPT_POSITION_NAME_CAROUSEL */\n\t\ttextEdit.cursorStartY = 28+(ppt_position_cursor()-ppt_position_first())*7;\n\t\ttextEdit.scrollable = false;',1)
+  s=s.replace(a,'\t\t/* PPT_POSITION_NAME_CAROUSEL */\n\t\ttextEdit.cursorStartY = 30+(ppt_position_cursor()-ppt_position_first())*7;\n\t\ttextEdit.scrollable = false;',1)
   p.write_text(s)
 # PPT_PATTERN_NAMES_SIDECAR: metadata only, MOD serialization stays byte-for-byte original.
 for name in ['ppt_pattern_names.c','ppt_pattern_names.h']:
@@ -845,3 +859,13 @@ if p.exists():
         assert s.count(anchor)==1
         s=s.replace(anchor,anchor+'\n\tpptBranding();',1)
         p.write_text(s)
+
+# POSITION editor never forwards keyboard note/effect writes into hidden pattern.
+p=root/'src'/'pt2_edit.c'
+if p.exists():
+ s=p.read_text()
+ if 'PPT_POSITION_EDIT_GUARD' not in s:
+  a=r'(void handleEditKeys\(SDL_Scancode scancode, bool normalMode\)\s*\{)'
+  s,count=re.subn(a,lambda m:m.group(1)+'\n\t/* PPT_POSITION_EDIT_GUARD */\n\tif (ui.posEdScreenShown) return;',s,count=1)
+  assert count==1
+  p.write_text(s)

@@ -100,6 +100,67 @@ void pptQaSetFull(bool on){
  ui.editOpScreenShown=false;ui.posEdScreenShown=false;ui.askBoxShown=false;ui.editTextFlag=false;
 }
 ''')
+ p=src/'ppt_input.c';p.write_text(p.read_text()+'''
+#include <assert.h>
+extern void pptQaCheckPosition(int expected, bool advance);
+extern void pptQaSnapshot(const char *name);
+extern void handleEditKeys(SDL_Scancode scancode,bool normalMode);
+#include "pt2_module_loader.h"
+#include "pt2_module_saver.h"
+void pptQaPositionEditing046(void){
+ ui.posEdScreenShown=true;ui.diskOpScreenShown=false;ui.samplerScreenShown=false;
+ ui.askBoxShown=false;ui.editTextFlag=false;ui.editOpScreenShown=false;
+ memset(held,0,sizeof(held));memset(editor.muted,0,sizeof(editor.muted));
+ editor.songPlaying=false;editor.currMode=MODE_IDLE;clearPosLoop();posAppend=false;
+ atomic_store(&posDetached,false);atomic_store(&posBrowseActive,true);
+ memset(song->header.patternTable,0,sizeof(song->header.patternTable));song->header.songLength=6;
+ for(int i=0;i<6;i++)song->header.patternTable[i]=(uint16_t)(5+i);
+ ppt_position_set_cursor(2);startPlayback(PPT_PLAY_SONG);pptQaCheckPosition(2,false);
+ buttonEvent(PPT_BTN_SELECT,true);releaseButton(PPT_BTN_SELECT);
+ assert(ppt_position_detached() && !ppt_live_edit_active());
+ browsePos(1);browsePos(1);assert(song->currPos==4);
+ atomic_store(&positionLoop,1|(3<<8)|POS_LOOP_VALID|POS_LOOP_ON);
+ pptQaCheckPosition(3,true);assert(song->currPos==4 && song->currPattern==9 && ppt_position_playhead()==3);
+ editor.muted[1]=editor.muted[3]=true;
+ displayMainScreen();ppt_views_begin();pptQaSnapshot("position_browse046.ppm");ppt_views_end();
+ pptQaCheckPosition(1,true);assert(song->currPos==4 && ppt_position_playhead()==1);
+ /* Launch outside the old loop clears it; playback is still native SONG. */
+ buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);
+ assert(editor.songPlaying && !ppt_position_detached() && !atomic_load(&positionLoop));
+ pptQaCheckPosition(4,false);assert(editor.playMode==PLAY_MODE_NORMAL);
+ buttonEvent(PPT_BTN_START,true);releaseButton(PPT_BTN_START);assert(!editor.songPlaying);
+ memset(editor.muted,0,sizeof(editor.muted));
+ /* Actual DELETE + SAVE + LOAD: high pattern data retained without changing saver. */
+ memset(song->header.patternTable,0,sizeof(song->header.patternTable));song->header.songLength=2;
+ song->header.patternTable[0]=99;song->header.patternTable[1]=5;
+ memset(song->patterns[99],0,256*sizeof(note_t));song->patterns[99][0]=(note_t){.period=428,.sample=1,.command=9,.param=16};
+ strcpy(ppt_pattern_name(99),"KEPT");ppt_position_set_cursor(0);
+ const note_t before=song->patterns[99][0];editor.currMode=MODE_EDIT;
+ handleEditKeys(SDL_SCANCODE_Z,true);insert();erase();edit(0);
+ assert(!memcmp(&before,&song->patterns[99][0],sizeof(before)));
+ buttonEvent(PPT_BTN_B,true);buttonEvent(PPT_BTN_A,true);
+ releaseButton(PPT_BTN_A);releaseButton(PPT_BTN_B);
+ assert(song->header.songLength==1 && song->header.patternTable[0]==5 && song->header.patternTable[1]==99);
+ assert(!memcmp(&before,&song->patterns[99][0],sizeof(before)));
+ strcpy(song->header.name,"position_keep");config.modDot=false;assert(saveModule(false,false));
+ module_t *loaded=modLoad("position_keep.mod");assert(loaded);
+ modFree();song=loaded;setupLoadedMod();
+ assert(song->header.songLength==1 && song->header.patternTable[0]==5);
+ assert(!memcmp(&before,&song->patterns[99][0],sizeof(before)) && !strcmp(ppt_pattern_name(99),"KEPT"));
+ puts("POSITION 046 native: independent SONG cursor, loop playback, relaunch, hidden edit guard and deleted pattern SAVE/LOAD OK");
+}
+
+''')
+ p=src/'pt2_replayer.c';p.write_text(p.read_text()+'''
+#include <assert.h>
+void pptQaCheckPosition(int expected, bool advance){
+ if(advance)nextPosition();
+ updateUIPositions();
+ assert(modPos==expected && modPattern==song->header.patternTable[expected]);
+ assert(ppt_position_playhead()==expected && editor.songPlaying);
+}
+
+''')
  p=src/'pt2_replayer.c';p.write_text(p.read_text()+'''
 void pptQaPatternSync(void){
  ASSERT(editor.playMode==PLAY_MODE_PATTERN && modPos==2 && modPattern==17);
@@ -365,7 +426,7 @@ int main(void){
  assert(pptQaHit(200,5)==PTB_STOP && pptQaHit(280,5)==PTB_PLAY);
  assert(pptQaHit(200,200)==PTB_DUMMY);
  ppt_position_set_cursor(69);editor.currMode=MODE_IDLE;
- mouse.x=188;mouse.y=23+(69-ppt_position_first())*7;
+ mouse.x=188;mouse.y=25+(69-ppt_position_first())*7;
  mouseButtonDownHandler(SDL_BUTTON_LEFT);mouseButtonUpHandler(SDL_BUTTON_LEFT);
  assert(ui.editTextFlag && textEdit.object==PTB_PE_PATTNAME);
  ppt_views_begin();pptQaSnapshot("pattern_name_edit.ppm");ppt_views_end();
@@ -385,6 +446,7 @@ int main(void){
  ppt_views_begin();int counts[4]={0};
  for(int y=0;y<255;y++)for(int x=0;x<320;x++){
   int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
+  if(y>=2 && y<=8 && x>=284 && x<316)continue; /* New full-pattern mute labels. */
   assert(noWave[at]==video.palette[PAL_BACKGRD] && video.frameBuffer[at]==0xff5555);
   int ch=(x-32)/72;assert(x>=44+ch*72 && ch<4 && x<44+ch*72+40 && y>=197 && y<230);counts[ch]++;
  }
@@ -398,6 +460,7 @@ int main(void){
  ppt_views_begin();int colorCounts[4]={0};const uint32_t colors[4]={0x888888,0xff5555,0xffffff,0x880000};
  for(int y=0;y<255;y++)for(int x=0;x<320;x++){
   int at=y*320+x;if(video.frameBuffer[at]==noWave[at])continue;
+  if(y>=247 && y<252 && x>=244 && x<314)continue; /* POSITION mute labels. */
   assert(x>=2 && x<=117 && y>=101 && y<=241);
   for(int ch=0;ch<4;ch++)if(video.frameBuffer[at]==colors[ch])colorCounts[ch]++;
  }
@@ -447,6 +510,7 @@ int main(void){
  assert(ppt_pattern_names_load() && !ppt_pattern_name(0)[0]);
  puts("Pattern sidecar: actual SAVE/LOAD, identical MOD bytes, 15 chars, missing/malformed/duplicate files, empty names, failed write OK");
  }
+ extern void pptQaPositionEditing046(void);pptQaPositionEditing046();
  ppt_browser_close();SDL_Quit();
  puts("Native WAV browser: cancel/preview preserve slot, source speed 440Hz, 36 notes, E3 default, live slot switch, masked background OK");
  return 0;
@@ -493,4 +557,4 @@ int main(void){
  out=os.environ.get('PPT_QA_RENDER_DIR')
  if out:
   dest=Path(out);dest.mkdir(parents=True,exist_ok=True)
-  for name in ['branding_main.ppm','branding_position.ppm','branding_disk.ppm','dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm','full_position.ppm','position_scopes.ppm','pattern_name_edit.ppm']:shutil.copy2(t/name,dest/name)
+  for name in ['position_browse046.ppm','branding_main.ppm','branding_position.ppm','branding_disk.ppm','dialog.ppm','waveform.ppm','full_mod_list.ppm','songname.ppm','mod_save_dialog.ppm','bpm_editor.ppm','full_pattern_scopes.ppm','full_position.ppm','position_scopes.ppm','pattern_name_edit.ppm']:shutil.copy2(t/name,dest/name)

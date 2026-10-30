@@ -12,3 +12,5 @@ void displayMainScreen(void);
 void renderDiskOpScreen(void);
 
 void pointerSetPreviousMode(void);
+
+void renderMuteButtons(void);
